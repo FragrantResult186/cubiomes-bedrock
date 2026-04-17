@@ -68,11 +68,11 @@ void setupGenerator(Generator *g, int mc, uint32_t flags)
     g->seed = 0;
     g->sha = 0;
 
-    if (mc >= MC_B1_8 && mc <= MC_1_17)
+    if (mc >= MC_B1_8 && mc < MC_1_18)
     {
         setupLayerStack(&g->ls, mc, flags & LARGE_BIOMES);
         g->entry = NULL;
-        if (flags & FORCE_OCEAN_VARIANTS && mc >= MC_1_13)
+        if (flags & FORCE_OCEAN_VARIANTS && mc >= MC_1_18)
         {
             g->ls.entry_16 = setupLayer(
                 g->xlayer+2, &mapOceanMixMod, mc, 1, 0, 0,
@@ -110,7 +110,7 @@ void applySeed(Generator *g, int dim, uint64_t seed)
             setBetaBiomeSeed(&g->bnb, seed);
             //initSurfaceNoiseBeta(&g->snb, g->seed);
         }
-        else if (g->mc <= MC_1_17)
+        else if (g->mc < MC_1_18)
         {
             setLayerSeed(g->entry ? g->entry : g->ls.entry_1, seed);
         }
@@ -119,17 +119,17 @@ void applySeed(Generator *g, int dim, uint64_t seed)
             setBiomeSeed(&g->bn, seed, g->flags & LARGE_BIOMES);
         }
     }
-    else if (dim == DIM_NETHER && g->mc >= MC_1_16_1)
+    else if (dim == DIM_NETHER && g->mc >= MC_1_16)
     {
         setNetherSeed(&g->nn, seed);
     }
-    else if (dim == DIM_END && g->mc >= MC_1_9)
+    else if (dim == DIM_END && g->mc >= MC_1_0)
     {
         setEndSeed(&g->en, g->mc, seed);
     }
-    if (g->mc >= MC_1_15)
+    if (g->mc >= MC_1_14)
     {
-        if (g->mc <= MC_1_17 && dim == DIM_OVERWORLD && !g->entry)
+        if (g->mc < MC_1_18 && dim == DIM_OVERWORLD && !g->entry)
             g->sha = g->ls.entry_1->startSalt;
         else
             g->sha = getVoronoiSHA(seed);
@@ -149,7 +149,7 @@ size_t getMinCacheSize(const Generator *g, int scale, int sx, int sy, int sz)
         int slen = ((smin >> (2 >> cellwidth)) + 1) * 2 + 1;
         len += slen * sizeof(SeaLevelColumnNoiseBeta);
     }
-    else if (g->mc >= MC_B1_8 && g->mc <= MC_1_17 && g->dim == DIM_OVERWORLD)
+    else if (g->mc >= MC_B1_8 && g->mc < MC_1_18 && g->dim == DIM_OVERWORLD)
     {   // recursively check the layer stack for the max buffer
         const Layer *entry = getLayerForScale(g, scale);
         if (!entry) {
@@ -185,7 +185,7 @@ int genBiomes(const Generator *g, int *cache, Range r)
 
     if (g->dim == DIM_OVERWORLD)
     {
-        if (g->mc >= MC_B1_8 && g->mc <= MC_1_17)
+        if (g->mc >= MC_B1_8 && g->mc < MC_1_18)
         {
             const Layer *entry = getLayerForScale(g, r.scale);
             if (!entry) return -1;
@@ -250,7 +250,7 @@ int getBiomeAt(const Generator *g, int scale, int x, int y, int z)
 
 const Layer *getLayerForScale(const Generator *g, int scale)
 {
-    if (g->mc > MC_1_17)
+    if (g->mc >= MC_1_18)
         return NULL;
     switch (scale)
     {
@@ -267,7 +267,7 @@ const Layer *getLayerForScale(const Generator *g, int scale)
 
 
 Layer *setupLayer(Layer *l, mapfunc_t *map, int mc,
-    int8_t zoom, int8_t edge, uint64_t saltbase, Layer *p, Layer *p2)
+                  int8_t zoom, int8_t edge, uint64_t saltbase, Layer *p, Layer *p2)
 {
     //Layer *l = g->layers + layerId;
     l->getMap = map;
@@ -299,8 +299,7 @@ static void setupScale(Layer *l, int scale)
 
 void setupLayerStack(LayerStack *g, int mc, int largeBiomes)
 {
-    if (mc < MC_1_3)
-        largeBiomes = 0;
+    largeBiomes = 0;
 
     memset(g, 0, sizeof(LayerStack));
     Layer *p, *l = g->layers;
@@ -330,13 +329,13 @@ void setupLayerStack(LayerStack *g, int mc, int largeBiomes)
         p = setupLayer(l+L_ZOOM_256,       mapZoom,        mc, 2, 3, 2004, p, 0);
         p = setupLayer(l+L_LAND_256,       map_land,       mc, 1, 2, 3,    p, 0);
         p = setupLayer(l+L_BIOME_256,      mapBiome,       mc, 1, 0, 200,  p, 0);
-        p = setupLayer(l+L_ZOOM_128,       mapZoom,        mc, 2, 3, 1000, p, 0);
+        p = setupLayer(l+L_ZOOM_128,       mapZoom,        mc, 2, 3, 1001, p, 0);
         p = setupLayer(l+L_ZOOM_64,        mapZoom,        mc, 2, 3, 1001, p, 0);
         // river noise layer chain, also used to determine where hills generate
         p = setupLayer(l+L_NOISE_256,      mapNoise,       mc, 1, 0, 100,
                        l+L_LAND_256, 0);
     }
-    else if (mc <= MC_1_6)
+    else if (mc < MC_1_0)
     {   //             L                   M               V   Z  E  S     P1 P2
         map_land = mapLand16;
         p = setupLayer(l+L_CONTINENT_4096, mapContinent,   mc, 1, 0, 1,    0, 0);
@@ -351,7 +350,7 @@ void setupLayerStack(LayerStack *g, int mc, int largeBiomes)
         p = setupLayer(l+L_LAND_256,       map_land,       mc, 1, 2, 4,    p, 0);
         p = setupLayer(l+L_MUSHROOM_256,   mapMushroom,    mc, 1, 2, 5,    p, 0);
         p = setupLayer(l+L_BIOME_256,      mapBiome,       mc, 1, 0, 200,  p, 0);
-        p = setupLayer(l+L_ZOOM_128,       mapZoom,        mc, 2, 3, 1000, p, 0);
+        p = setupLayer(l+L_ZOOM_128,       mapZoom,        mc, 2, 3, 1001, p, 0);
         p = setupLayer(l+L_ZOOM_64,        mapZoom,        mc, 2, 3, 1001, p, 0);
         // river noise layer chain, also used to determine where hills generate
         p = setupLayer(l+L_NOISE_256,      mapNoise,       mc, 1, 0, 100,
@@ -381,7 +380,7 @@ void setupLayerStack(LayerStack *g, int mc, int largeBiomes)
         p = setupLayer(l+L_BIOME_256,      mapBiome,       mc, 1, 0, 200,  p, 0);
         if (mc >= MC_1_14)
             p = setupLayer(l+L_BAMBOO_256, mapBamboo,      mc, 1, 0, 1001, p, 0);
-        p = setupLayer(l+L_ZOOM_128,       mapZoom,        mc, 2, 3, 1000, p, 0);
+        p = setupLayer(l+L_ZOOM_128,       mapZoom,        mc, 2, 3, 1001, p, 0);
         p = setupLayer(l+L_ZOOM_64,        mapZoom,        mc, 2, 3, 1001, p, 0);
         p = setupLayer(l+L_BIOME_EDGE_64,  mapBiomeEdge,   mc, 1, 2, 1000, p, 0);
         // river noise layer chain, also used to determine where hills generate
@@ -389,17 +388,17 @@ void setupLayerStack(LayerStack *g, int mc, int largeBiomes)
                        l+L_DEEP_OCEAN_256, 0);
     }
 
-    if      (mc <= MC_1_0) {}
-    else if (mc <= MC_1_12)
+    if         (mc <= MC_1_0) {}
+    else // if (mc <= MC_1_12)
     {
         p = setupLayer(l+L_ZOOM_128_HILLS, mapZoom,        mc, 2, 3, 0,    p, 0);
         p = setupLayer(l+L_ZOOM_64_HILLS,  mapZoom,        mc, 2, 3, 0,    p, 0);
     }
-    else // if (mc >= MC_1_13)
-    {
-        p = setupLayer(l+L_ZOOM_128_HILLS, mapZoom,        mc, 2, 3, 1000, p, 0);
-        p = setupLayer(l+L_ZOOM_64_HILLS,  mapZoom,        mc, 2, 3, 1001, p, 0);
-    }
+    // else // if (mc >= MC_1_13)
+    // {
+    //     p = setupLayer(l+L_ZOOM_128_HILLS, mapZoom,        mc, 2, 3, 1000, p, 0);
+    //     p = setupLayer(l+L_ZOOM_64_HILLS,  mapZoom,        mc, 2, 3, 1001, p, 0);
+    // }
 
     if (mc <= MC_1_0)
     {   //             L                   M               V   Z  E  S     P1 P2
@@ -415,18 +414,18 @@ void setupLayerStack(LayerStack *g, int mc, int largeBiomes)
         p = setupLayer(l+L_SMOOTH_4,       mapSmooth,      mc, 1, 2, 1000, p, 0);
 
         // river layer chain
-        p = setupLayer(l+L_ZOOM_128_RIVER, mapZoom,        mc, 2, 3, 1000,
+        p = setupLayer(l+L_ZOOM_128_RIVER, mapZoom,        mc, 2, 3, 1001,
                        l+L_NOISE_256, 0);
         p = setupLayer(l+L_ZOOM_64_RIVER,  mapZoom,        mc, 2, 3, 1001, p, 0);
-        p = setupLayer(l+L_ZOOM_32_RIVER,  mapZoom,        mc, 2, 3, 1002, p, 0);
-        p = setupLayer(l+L_ZOOM_16_RIVER,  mapZoom,        mc, 2, 3, 1003, p, 0);
-        p = setupLayer(l+L_ZOOM_8_RIVER,   mapZoom,        mc, 2, 3, 1004, p, 0);
-        p = setupLayer(l+L_ZOOM_4_RIVER,   mapZoom,        mc, 2, 3, 1005, p, 0);
+        p = setupLayer(l+L_ZOOM_32_RIVER,  mapZoom,        mc, 2, 3, 1001, p, 0);
+        p = setupLayer(l+L_ZOOM_16_RIVER,  mapZoom,        mc, 2, 3, 1001, p, 0);
+        p = setupLayer(l+L_ZOOM_8_RIVER,   mapZoom,        mc, 2, 3, 1001, p, 0);
+        p = setupLayer(l+L_ZOOM_4_RIVER,   mapZoom,        mc, 2, 3, 1001, p, 0);
 
         p = setupLayer(l+L_RIVER_4,        mapRiver,       mc, 1, 2, 1,    p, 0);
         p = setupLayer(l+L_SMOOTH_4_RIVER, mapSmooth,      mc, 1, 2, 1000, p, 0);
     }
-    else if (mc <= MC_1_6)
+    else if (mc < MC_1_0)
     {   //             L                   M               V   Z  E  S     P1 P2
         p = setupLayer(l+L_HILLS_64,       mapHills,       mc, 1, 2, 1000,
                        l+L_ZOOM_64, l+L_ZOOM_64_HILLS);
@@ -448,13 +447,13 @@ void setupLayerStack(LayerStack *g, int mc, int largeBiomes)
         p = setupLayer(l+L_SMOOTH_4,       mapSmooth,      mc, 1, 2, 1000, p, 0);
 
         // river layer chain
-        p = setupLayer(l+L_ZOOM_128_RIVER, mapZoom,        mc, 2, 3, 1000,
+        p = setupLayer(l+L_ZOOM_128_RIVER, mapZoom,        mc, 2, 3, 1001,
                        l+L_NOISE_256, 0);
         p = setupLayer(l+L_ZOOM_64_RIVER,  mapZoom,        mc, 2, 3, 1001, p, 0);
-        p = setupLayer(l+L_ZOOM_32_RIVER,  mapZoom,        mc, 2, 3, 1002, p, 0);
-        p = setupLayer(l+L_ZOOM_16_RIVER,  mapZoom,        mc, 2, 3, 1003, p, 0);
-        p = setupLayer(l+L_ZOOM_8_RIVER,   mapZoom,        mc, 2, 3, 1004, p, 0);
-        p = setupLayer(l+L_ZOOM_4_RIVER,   mapZoom,        mc, 2, 3, 1005, p, 0);
+        p = setupLayer(l+L_ZOOM_32_RIVER,  mapZoom,        mc, 2, 3, 1001, p, 0);
+        p = setupLayer(l+L_ZOOM_16_RIVER,  mapZoom,        mc, 2, 3, 1001, p, 0);
+        p = setupLayer(l+L_ZOOM_8_RIVER,   mapZoom,        mc, 2, 3, 1001, p, 0);
+        p = setupLayer(l+L_ZOOM_4_RIVER,   mapZoom,        mc, 2, 3, 1001, p, 0);
 
         if (largeBiomes)
         {
@@ -487,13 +486,13 @@ void setupLayerStack(LayerStack *g, int mc, int largeBiomes)
         p = setupLayer(l+L_SMOOTH_4,       mapSmooth,      mc, 1, 2, 1000, p, 0);
 
         // river layer chain
-        p = setupLayer(l+L_ZOOM_128_RIVER, mapZoom,        mc, 2, 3, 1000,
+        p = setupLayer(l+L_ZOOM_128_RIVER, mapZoom,        mc, 2, 3, 1001,
                        l+L_RIVER_INIT_256, 0);
         p = setupLayer(l+L_ZOOM_64_RIVER,  mapZoom,        mc, 2, 3, 1001, p, 0);
-        p = setupLayer(l+L_ZOOM_32_RIVER,  mapZoom,        mc, 2, 3, 1000, p, 0);
+        p = setupLayer(l+L_ZOOM_32_RIVER,  mapZoom,        mc, 2, 3, 1001, p, 0);
         p = setupLayer(l+L_ZOOM_16_RIVER,  mapZoom,        mc, 2, 3, 1001, p, 0);
-        p = setupLayer(l+L_ZOOM_8_RIVER,   mapZoom,        mc, 2, 3, 1002, p, 0);
-        p = setupLayer(l+L_ZOOM_4_RIVER,   mapZoom,        mc, 2, 3, 1003, p, 0);
+        p = setupLayer(l+L_ZOOM_8_RIVER,   mapZoom,        mc, 2, 3, 1001, p, 0);
+        p = setupLayer(l+L_ZOOM_4_RIVER,   mapZoom,        mc, 2, 3, 1001, p, 0);
 
         if (largeBiomes && mc == MC_1_7)
         {
@@ -509,7 +508,7 @@ void setupLayerStack(LayerStack *g, int mc, int largeBiomes)
                    l+L_SMOOTH_4, l+L_SMOOTH_4_RIVER);
 
 
-    if (mc <= MC_1_12)
+    if (mc <= MC_1_2)
     {
         p = setupLayer(l+L_VORONOI_1, mapVoronoi114, mc, 4, 3, 10, p, 0);
     }
@@ -518,33 +517,34 @@ void setupLayerStack(LayerStack *g, int mc, int largeBiomes)
         // ocean variants
         p = setupLayer(l+L_OCEAN_TEMP_256, mapOceanTemp,   mc, 1, 0, 2,    0, 0);
         p->noise = &g->oceanRnd;
-        p = setupLayer(l+L_ZOOM_128_OCEAN, mapZoom,        mc, 2, 3, 2001, p, 0);
+        p = setupLayer(l+L_OCEAN_EDGE_256, mapOceanEdge,   mc, 1, 2, 2, p, 0);
+        p = setupLayer(l+L_ZOOM_128_OCEAN, mapZoom,        mc, 2, 3, 2002, p, 0);
         p = setupLayer(l+L_ZOOM_64_OCEAN,  mapZoom,        mc, 2, 3, 2002, p, 0);
-        p = setupLayer(l+L_ZOOM_32_OCEAN,  mapZoom,        mc, 2, 3, 2003, p, 0);
-        p = setupLayer(l+L_ZOOM_16_OCEAN,  mapZoom,        mc, 2, 3, 2004, p, 0);
-        p = setupLayer(l+L_ZOOM_8_OCEAN,   mapZoom,        mc, 2, 3, 2005, p, 0);
-        p = setupLayer(l+L_ZOOM_4_OCEAN,   mapZoom,        mc, 2, 3, 2006, p, 0);
+        p = setupLayer(l+L_ZOOM_32_OCEAN,  mapZoom,        mc, 2, 3, 2002, p, 0);
+        p = setupLayer(l+L_ZOOM_16_OCEAN,  mapZoom,        mc, 2, 3, 2002, p, 0);
+        p = setupLayer(l+L_ZOOM_8_OCEAN,   mapZoom,        mc, 2, 3, 2002, p, 0);
+        p = setupLayer(l+L_ZOOM_4_OCEAN,   mapZoom,        mc, 2, 3, 2002, p, 0);
         p = setupLayer(l+L_OCEAN_MIX_4,    mapOceanMix,    mc, 1, 17, 100,
                        l+L_RIVER_MIX_4, l+L_ZOOM_4_OCEAN);
 
-        if (mc <= MC_1_14)
-            p = setupLayer(l+L_VORONOI_1, mapVoronoi114, mc, 4, 3, 10, p, 0);
-        else
-            p = setupLayer(l+L_VORONOI_1, mapVoronoi, mc, 4, 3, LAYER_INIT_SHA, p, 0);
+        // if (mc <= MC_1_14)
+            p = setupLayer(l+L_VORONOI_1, mapVoronoi114, mc, 4, 7, 10, p, 0);
+        // else
+        //    p = setupLayer(l+L_VORONOI_1, mapVoronoi, mc, 4, 3, LAYER_INIT_SHA, p, 0);
     }
 
     g->entry_1 = p;
-    g->entry_4 = l + (mc <= MC_1_12 ? L_RIVER_MIX_4 : L_OCEAN_MIX_4);
+    g->entry_4 = l + (mc <= MC_1_2 ? L_RIVER_MIX_4 : L_OCEAN_MIX_4);
     if (largeBiomes)
     {
         g->entry_16 = l + L_ZOOM_4;
-        g->entry_64 = l + (mc <= MC_1_6 ? L_SWAMP_RIVER_16 : L_SHORE_16);
-        g->entry_256 = l + (mc <= MC_1_6 ? L_HILLS_64 : L_SUNFLOWER_64);
+        g->entry_64 = l + (mc < MC_1_0 ? L_SWAMP_RIVER_16 : L_SHORE_16);
+        g->entry_256 = l + (mc < MC_1_0 ? L_HILLS_64 : L_SUNFLOWER_64);
     }
     else if (mc >= MC_1_1)
     {
-        g->entry_16 = l + (mc <= MC_1_6 ? L_SWAMP_RIVER_16 : L_SHORE_16);
-        g->entry_64 = l + (mc <= MC_1_6 ? L_HILLS_64 : L_SUNFLOWER_64);
+        g->entry_16 = l + (mc < MC_1_0 ? L_SWAMP_RIVER_16 : L_SHORE_16);
+        g->entry_64 = l + (mc < MC_1_0 ? L_HILLS_64 : L_SUNFLOWER_64);
         g->entry_256 = l + (mc <= MC_1_14 ? L_BIOME_256 : L_BAMBOO_256);
     }
     else
@@ -602,13 +602,13 @@ size_t getMinLayerCacheSize(const Layer *layer, int sizeX, int sizeZ)
 
 int genArea(const Layer *layer, int *out, int areaX, int areaZ, int areaWidth, int areaHeight)
 {
-    memset(out, 0, sizeof(*out)*areaWidth*areaHeight);
+    memset(out, 0, sizeof(*out) * areaWidth * areaHeight);
     return layer->getMap(layer, out, areaX, areaZ, areaWidth, areaHeight);
 }
 
 
 int mapApproxHeight(float *y, int *ids, const Generator *g, const SurfaceNoise *sn,
-    int x, int z, int w, int h)
+                    int x, int z, int w, int h)
 {
     if (g->dim == DIM_NETHER)
         return 127;

@@ -1,7 +1,6 @@
 #include "biomenoise.h"
 
 #include "tables/btree18.h"
-#include "tables/btree192.h"
 #include "tables/btree19.h"
 #include "tables/btree20.h"
 #include "tables/btree21wd.h"
@@ -20,11 +19,10 @@
 
 void initSurfaceNoise(SurfaceNoise *sn, int dim, uint64_t seed)
 {
-    uint64_t s;
-    setSeed(&s, seed);
-    octaveInit(&sn->octmin, &s, sn->oct+0, -15, 16);
-    octaveInit(&sn->octmax, &s, sn->oct+16, -15, 16);
-    octaveInit(&sn->octmain, &s, sn->oct+32, -7, 8);
+    setSeed(seed);
+    octaveInit(&sn->octmin, sn->oct+0, -15, 16);
+    octaveInit(&sn->octmax, sn->oct+16, -15, 16);
+    octaveInit(&sn->octmain, sn->oct+32, -7, 8);
     if (dim == DIM_END)
     {
         sn->xzScale = 2.0;
@@ -34,9 +32,9 @@ void initSurfaceNoise(SurfaceNoise *sn, int dim, uint64_t seed)
     }
     else // DIM_OVERWORLD
     {
-        octaveInit(&sn->octsurf, &s, sn->oct+40, -3, 4);
-        skipNextN(&s, 262*10);
-        octaveInit(&sn->octdepth, &s, sn->oct+44, -15, 16);
+        octaveInit(&sn->octsurf, sn->oct+40, -3, 4);
+        skipNextN(262*10);
+        octaveInit(&sn->octdepth, sn->oct+44, -15, 16);
         sn->xzScale = 0.9999999814507745;
         sn->yScale = 0.9999999814507745;
         sn->xzFactor = 80;
@@ -47,12 +45,12 @@ void initSurfaceNoise(SurfaceNoise *sn, int dim, uint64_t seed)
 void initSurfaceNoiseBeta(SurfaceNoiseBeta *snb, uint64_t seed)
 {
     uint64_t s;
-    setSeed(&s, seed);
+    setSeed(seed);
 
     octaveInitBeta(&snb->octmin, &s, snb->oct+0, 16, 684.412, 0.5, 1.0, 2.0);
     octaveInitBeta(&snb->octmax, &s, snb->oct+16, 16, 684.412, 0.5, 1.0, 2.0);
     octaveInitBeta(&snb->octmain, &s, snb->oct+32, 8, 684.412/80.0, 0.5, 1.0, 2.0);
-    skipNextN(&s, 262*8);
+    skipNextN(262*8);
     octaveInitBeta(&snb->octcontA, &s, snb->oct+40, 10, 1.121, 0.5, 1.0, 2.0);
     octaveInitBeta(&snb->octcontB, &s, snb->oct+50, 16, 200.0, 0.5, 1.0, 2.0);
 }
@@ -158,16 +156,15 @@ double sampleSurfaceNoise(const SurfaceNoise *sn, int x, int y, int z)
 }
 
 //==============================================================================
-// Nether (1.16+) and End (1.9+) Biome Generation
+// Nether (1.16+) and End (1.0+) Biome Generation
 //==============================================================================
 
 void setNetherSeed(NetherNoise *nn, uint64_t seed)
 {
-    uint64_t s;
-    setSeed(&s, seed);
-    doublePerlinInit(&nn->temperature, &s, &nn->oct[0], &nn->oct[2], -7, 2);
-    setSeed(&s, seed+1);
-    doublePerlinInit(&nn->humidity, &s, &nn->oct[4], &nn->oct[6], -7, 2);
+    setSeed(seed);
+    doublePerlinInit(&nn->temperature, &nn->oct[0], &nn->oct[2], -7, 2);
+    setSeed(seed+1);
+    doublePerlinInit(&nn->humidity, &nn->oct[4], &nn->oct[6], -7, 2);
 }
 
 /* Gets the 3D nether biome at scale 1:4 (for 1.16+).
@@ -311,7 +308,7 @@ int genNetherScaled(const NetherNoise *nn, int *out, Range r, int mc, uint64_t s
 
     uint64_t siz = (uint64_t)r.sx*r.sy*r.sz;
 
-    if (mc <= MC_1_15)
+    if (mc <= MC_1_14)
     {
         uint64_t i;
         for (i = 0; i < siz; i++)
@@ -369,10 +366,9 @@ int genNetherScaled(const NetherNoise *nn, int *out, Range r, int mc, uint64_t s
 
 void setEndSeed(EndNoise *en, int mc, uint64_t seed)
 {
-    uint64_t s;
-    setSeed(&s, seed);
-    skipNextN(&s, 17292);
-    perlinInit(&en->perlin, &s);
+    setSeed(seed);
+    skipNextN(10360);// thank you so much to megasys!
+    perlinInit(&en->perlin);
     en->mc = mc;
 }
 
@@ -468,15 +464,6 @@ int mapEndBiome(const EndNoise *en, int *out, int x, int z, int w, int h)
             {
                 hx = 2*hx + 1;
                 hz = 2*hz + 1;
-                if (en->mc > MC_1_13)
-                {   // add outer end rings
-                    rsq = hx * hx + hz * hz;
-                    if ((int)rsq < 0)
-                    {
-                        out[j*w+i] = end_barrens;
-                        continue;
-                    }
-                }
                 uint16_t *p_elev = &hmap[(hz/2-z)*hw + (hx/2-x)];
                 out[j*w+i] = getEndBiome(hx, hz, p_elev, hw);
             }
@@ -582,7 +569,7 @@ void sampleNoiseColumnEnd(double column[],
     };
 
     int y;
-    if (en->mc > MC_1_13)
+    if (en->mc >= MC_1_0)
     {   // add outer end rings
         uint64_t rsq = (uint64_t) x * x + (uint64_t) z * z;
         if ((int)rsq < 0)
@@ -742,14 +729,6 @@ int genEndScaled(const EndNoise *en, int *out, Range r, int mc, uint64_t sha)
         return 1;
     if (r.sy == 0)
         r.sy = 1;
-
-    if (mc <= MC_1_8)
-    {
-        uint64_t i, siz = (uint64_t)r.sx*r.sy*r.sz;
-        for (i = 0; i < siz; i++)
-            out[i] = the_end;
-        return 0;
-    }
 
     int err, iy;
 
@@ -928,13 +907,13 @@ void setBiomeSeed(BiomeNoise *bn, uint64_t seed, int large)
 void setBetaBiomeSeed(BiomeNoiseBeta *bnb, uint64_t seed)
 {
     uint64_t seedScratch;
-    setSeed(&seedScratch, seed*9871);
+    setSeed(seed*9871);
     octaveInitBeta(bnb->climate, &seedScratch, bnb->oct,
         4, 0.025/1.5, 0.25, 0.55, 2.0);
-    setSeed(&seedScratch, seed*39811);
+    setSeed(seed*39811);
     octaveInitBeta(bnb->climate+1, &seedScratch, bnb->oct+4,
         4, 0.05/1.5, 1./3, 0.55, 2.0);
-    setSeed(&seedScratch, seed*0x84a59L);
+    setSeed(seed*0x84a59L);
     octaveInitBeta(bnb->climate+2, &seedScratch, bnb->oct+8,
         2, 0.25/1.5, 10./17, 0.55, 2.0);
     bnb->nptype = -1;
@@ -1358,7 +1337,6 @@ int getOldBetaBiome(float t, float h)
     };
     static const int bmap[] = {
         plains, desert, forest, taiga, swamp, snowy_tundra, savanna,
-        seasonal_forest, rainforest, shrubland
     };
     int idx = (int)(t * 63) + (int)(h * 63) * 64;
     return bmap[ biome_table_beta_1_7[idx] ];
@@ -1437,10 +1415,6 @@ int climateToBiome(int mc, const uint64_t np[6], uint64_t *dat)
         btree18_steps, &btree18_param[0][0], btree18_nodes, btree18_order,
         sizeof(btree18_nodes) / sizeof(uint64_t)
     };
-    static const BiomeTree btree192 = {
-        btree192_steps, &btree192_param[0][0], btree192_nodes, btree192_order,
-        sizeof(btree192_nodes) / sizeof(uint64_t)
-    };
     static const BiomeTree btree19 = {
         btree19_steps, &btree19_param[0][0], btree19_nodes, btree19_order,
         sizeof(btree19_nodes) / sizeof(uint64_t)
@@ -1457,14 +1431,12 @@ int climateToBiome(int mc, const uint64_t np[6], uint64_t *dat)
     const BiomeTree *bt;
     int idx;
 
-    if (mc >= MC_1_21_WD)
+    if (mc >= MC_1_21_50)
         bt = &btree21wd;
-    else if (mc >= MC_1_20_6)
+    else if (mc >= MC_1_20)
         bt = &btree20;
-    else if (mc >= MC_1_19_4)
+    else if (mc >= MC_1_19)
         bt = &btree19;
-    else if (mc >= MC_1_19_2)
-        bt = &btree192;
     else
         bt = &btree18;
 

@@ -48,85 +48,76 @@ const char* mc2str(int mc)
 {
     switch (mc)
     {
-    case MC_B1_7:   return "Beta 1.7"; break;
-    case MC_B1_8:   return "Beta 1.8"; break;
-    case MC_1_0:    return "1.0"; break;
-    case MC_1_1:    return "1.1"; break;
-    case MC_1_2:    return "1.2"; break;
-    case MC_1_3:    return "1.3"; break;
-    case MC_1_4:    return "1.4"; break;
-    case MC_1_5:    return "1.5"; break;
-    case MC_1_6:    return "1.6"; break;
-    case MC_1_7:    return "1.7"; break;
-    case MC_1_8:    return "1.8"; break;
-    case MC_1_9:    return "1.9"; break;
-    case MC_1_10:   return "1.10"; break;
-    case MC_1_11:   return "1.11"; break;
-    case MC_1_12:   return "1.12"; break;
-    case MC_1_13:   return "1.13"; break;
-    case MC_1_14:   return "1.14"; break;
-    case MC_1_15:   return "1.15"; break;
-    case MC_1_16_1: return "1.16.1"; break;
-    case MC_1_16:   return "1.16"; break;
-    case MC_1_17:   return "1.17"; break;
-    case MC_1_18:   return "1.18"; break;
-    case MC_1_19_2: return "1.19.2"; break;
-    case MC_1_19:   return "1.19"; break;
-    case MC_1_20:   return "1.20"; break;
-    case MC_1_21_1: return "1.21.1"; break;
-    case MC_1_21_3: return "1.21.3"; break;
-    case MC_1_21_WD: return "1.21 WD"; break;
-    default:        return "?";
+    case MC_B1_7:    return "Beta 1.7"; break;
+    case MC_B1_8:    return "Beta 1.8"; break;
+    case MC_1_0:     return "1.0"; break;
+    case MC_1_1:     return "1.1"; break;
+    case MC_1_2:     return "1.2"; break;
+    case MC_1_4:     return "1.4"; break;
+    case MC_1_5:     return "1.5"; break;
+    case MC_1_6:     return "1.6"; break;
+    case MC_1_7:     return "1.7"; break;
+    case MC_1_8:     return "1.8"; break;
+    case MC_1_9:     return "1.9"; break;
+    case MC_1_10:    return "1.10"; break;
+    case MC_1_11:    return "1.11"; break;
+    case MC_1_12:    return "1.12"; break;
+    case MC_1_13:    return "1.13"; break;
+    case MC_1_14:    return "1.14"; break;
+    case MC_1_16:    return "1.16"; break;
+    case MC_1_17:    return "1.17"; break;
+    case MC_1_17_30: return "1.17.30"; break;
+    case MC_1_18:    return "1.18"; break;
+    case MC_1_19:    return "1.19"; break;
+    case MC_1_20:    return "1.20"; break;
+    case MC_1_21:    return "1.21"; break;
+    case MC_1_21_50: return "1.21.50"; break;
+    case MC_1_21_60: return "1.21.60"; break;
+    default:         return "?";
     }
 }
 
 int str2mc(const char *s)
 {
     if (!strcmp(s, "1.21"))     return MC_1_21;
-    if (!strcmp(s, "1.21 WD"))  return MC_1_21_WD;
-    if (!strcmp(s, "1.21.3"))   return MC_1_21_3;
-    if (!strcmp(s, "1.21.2"))   return MC_1_21_3; // backwards compatibility
-    if (!strcmp(s, "1.21.1"))   return MC_1_21_1;
+    if (!strcmp(s, "1.21.0"))   return MC_1_21_0;
+    if (!strcmp(s, "1.21.50"))  return MC_1_21_50;
+    if (!strcmp(s, "1.21.60"))  return MC_1_21_60;
     if (!strcmp(s, "1.20"))     return MC_1_20;
-    if (!strcmp(s, "1.20.6"))   return MC_1_20_6;
+    if (!strcmp(s, "1.20.0"))   return MC_1_20_0;
     if (!strcmp(s, "1.19"))     return MC_1_19;
-    if (!strcmp(s, "1.19.4"))   return MC_1_19_4;
-    if (!strcmp(s, "1.19.2"))   return MC_1_19_2;
+    if (!strcmp(s, "1.19.0"))   return MC_1_19_0;
     if (!strcmp(s, "1.18"))     return MC_1_18;
-    if (!strcmp(s, "1.18.2"))   return MC_1_18_2;
+    if (!strcmp(s, "1.18.0"))   return MC_1_18_0;
     if (!strcmp(s, "1.17"))     return MC_1_17;
-    if (!strcmp(s, "1.17.1"))   return MC_1_17_1;
+    if (!strcmp(s, "1.17.0"))   return MC_1_17_0;
+    if (!strcmp(s, "1.17.30"))  return MC_1_17_30;
     if (!strcmp(s, "1.16"))     return MC_1_16;
-    if (!strcmp(s, "1.16.5"))   return MC_1_16_5;
-    if (!strcmp(s, "1.16.1"))   return MC_1_16_1;
-    if (!strcmp(s, "1.15"))     return MC_1_15;
-    if (!strcmp(s, "1.15.2"))   return MC_1_15_2;
+    if (!strcmp(s, "1.16.0"))   return MC_1_16_0;
     if (!strcmp(s, "1.14"))     return MC_1_14;
-    if (!strcmp(s, "1.14.4"))   return MC_1_14_4;
+    if (!strcmp(s, "1.14.0"))   return MC_1_14_0;
     if (!strcmp(s, "1.13"))     return MC_1_13;
-    if (!strcmp(s, "1.13.2"))   return MC_1_13_2;
+    if (!strcmp(s, "1.13.0"))   return MC_1_13_0;
     if (!strcmp(s, "1.12"))     return MC_1_12;
-    if (!strcmp(s, "1.12.2"))   return MC_1_12_2;
+    if (!strcmp(s, "1.12.0"))   return MC_1_12_0;
     if (!strcmp(s, "1.11"))     return MC_1_11;
-    if (!strcmp(s, "1.11.2"))   return MC_1_11_2;
+    if (!strcmp(s, "1.11.0"))   return MC_1_11_0;
     if (!strcmp(s, "1.10"))     return MC_1_10;
-    if (!strcmp(s, "1.10.2"))   return MC_1_10_2;
+    if (!strcmp(s, "1.10.0"))   return MC_1_10_0;
     if (!strcmp(s, "1.9"))      return MC_1_9;
-    if (!strcmp(s, "1.9.4"))    return MC_1_9_4;
+    if (!strcmp(s, "1.9.0"))    return MC_1_9_0;
     if (!strcmp(s, "1.8"))      return MC_1_8;
-    if (!strcmp(s, "1.8.9"))    return MC_1_8_9;
+    if (!strcmp(s, "1.8.0"))    return MC_1_8_0;
     if (!strcmp(s, "1.7"))      return MC_1_7;
-    if (!strcmp(s, "1.7.10"))   return MC_1_7_10;
+    if (!strcmp(s, "1.7.0"))    return MC_1_7_0;
     if (!strcmp(s, "1.6"))      return MC_1_6;
-    if (!strcmp(s, "1.6.4"))    return MC_1_6_4;
+    if (!strcmp(s, "1.6.0"))    return MC_1_6_0;
     if (!strcmp(s, "1.5"))      return MC_1_5;
-    if (!strcmp(s, "1.5.2"))    return MC_1_5_2;
+    if (!strcmp(s, "1.5.0"))    return MC_1_5_0;
     if (!strcmp(s, "1.4"))      return MC_1_4;
-    if (!strcmp(s, "1.4.7"))    return MC_1_4_7;
-    if (!strcmp(s, "1.3"))      return MC_1_3;
-    if (!strcmp(s, "1.3.2"))    return MC_1_3_2;
+    if (!strcmp(s, "1.4.0"))    return MC_1_4_0;
     if (!strcmp(s, "1.2"))      return MC_1_2;
-    if (!strcmp(s, "1.2.5"))    return MC_1_2_5;
+    if (!strcmp(s, "1.2.0"))    return MC_1_2_0;
     if (!strcmp(s, "1.1"))      return MC_1_1;
     if (!strcmp(s, "1.1.0"))    return MC_1_1_0;
     if (!strcmp(s, "1.0"))      return MC_1_0;
@@ -174,7 +165,7 @@ const char *biome2str(int mc, int id)
     // 10
     case frozen_ocean: return "frozen_ocean";
     case frozen_river: return "frozen_river";
-    case snowy_tundra: return "snowy_tundra";
+    case snowy_plains: return "snowy_plains";
     case snowy_mountains: return "snowy_mountains";
     case mushroom_fields: return "mushroom_fields";
     case mushroom_field_shore: return "mushroom_field_shore";
@@ -205,10 +196,6 @@ const char *biome2str(int mc, int id)
     case wooded_badlands_plateau: return "wooded_badlands_plateau";
     case badlands_plateau: return "badlands_plateau";
     // 40  --  1.13
-    case small_end_islands: return "small_end_islands";
-    case end_midlands: return "end_midlands";
-    case end_highlands: return "end_highlands";
-    case end_barrens: return "end_barrens";
     case warm_ocean: return "warm_ocean";
     case lukewarm_ocean: return "lukewarm_ocean";
     case cold_ocean: return "cold_ocean";
@@ -217,10 +204,6 @@ const char *biome2str(int mc, int id)
     case deep_cold_ocean: return "deep_cold_ocean";
     // 50
     case deep_frozen_ocean: return "deep_frozen_ocean";
-    // Alpha 1.2 - Beta 1.7
-    case seasonal_forest: return "seasonal_forest";
-    case shrubland: return "shrubland";
-    case rainforest: return "rainforest";
 
     case the_void: return "the_void";
 
@@ -259,17 +242,13 @@ const char *biome2str(int mc, int id)
     case lush_caves: return "lush_caves";
     // 1.18
     case meadow: return "meadow";
-    case grove: return "grove";
-    case snowy_slopes: return "snowy_slopes";
     case stony_peaks: return "stony_peaks";
-    case jagged_peaks: return "jagged_peaks";
-    case frozen_peaks: return "frozen_peaks";
     // 1.19
     case deep_dark: return "deep_dark";
     case mangrove_swamp: return "mangrove_swamp";
     // 1.20
     case cherry_grove: return "cherry_grove";
-    // 1.21.4 (Winter Drop)
+    // 1.21.50 (Winter Drop)
     case pale_garden: return "pale_garden";
     }
     return NULL;
@@ -284,6 +263,7 @@ const char* struct2str(int stype)
     case Swamp_Hut:         return "swamp_hut";
     case Igloo:             return "igloo";
     case Village:           return "village";
+    case Stronghold:        return "stronghold";
     case Ocean_Ruin:        return "ocean_ruin";
     case Shipwreck:         return "shipwreck";
     case Monument:          return "monument";
@@ -291,6 +271,8 @@ const char* struct2str(int stype)
     case Outpost:           return "pillager_outpost";
     case Treasure:          return "buried_treasure";
     case Mineshaft:         return "mineshaft";
+    case Ravine:            return "ravine";
+    case Lava_Lake:         return "lavalake";
     case Desert_Well:       return "desert_well";
     case Ruined_Portal:     return "ruined_portal";
     case Ruined_Portal_N:   return "ruined_portal_nether";
@@ -374,9 +356,6 @@ void initBiomeColors(unsigned char colors[256][3])
     setColor(colors, deep_lukewarm_ocean,              0x000040);
     setColor(colors, deep_cold_ocean,                  0x202038);
     setColor(colors, deep_frozen_ocean,                0x404090);
-    setColor(colors, seasonal_forest,                  0x2f560f); // -
-    setColor(colors, rainforest,                       0x47840e); // -
-    setColor(colors, shrubland,                        0x789e31); // -
     setColor(colors, the_void,                         0x000000);
     setColor(colors, sunflower_plains,                 0xb5db88);
     setColor(colors, desert_lakes,                     0xffbc40);

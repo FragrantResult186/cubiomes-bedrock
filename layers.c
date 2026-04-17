@@ -18,13 +18,6 @@ void setLayerSeed(Layer *layer, uint64_t worldSeed)
     if (layer->p != NULL)
         setLayerSeed(layer->p, worldSeed);
 
-    if (layer->noise != NULL)
-    {
-        uint64_t s;
-        setSeed(&s, worldSeed);
-        perlinInit((PerlinNoise*)layer->noise, &s);
-    }
-
     uint64_t ls = layer->layerSalt;
     if (ls == 0)
     {   // Pre 1.13 the Hills branch stays zero-initialized
@@ -850,7 +843,7 @@ int mapDeepOcean(const Layer * l, int * out, int x, int z, int w, int h)
 
 
 const int warmBiomes[] = {desert, desert, desert, savanna, savanna, plains};
-const int lushBiomes[] = {forest, dark_forest, mountains, plains, birch_forest, swamp};
+const int lushBiomes[] = {forest, dark_forest, mountains, plains, plains, plains, birch_forest, swamp};
 const int coldBiomes[] = {forest, mountains, taiga, plains};
 const int snowBiomes[] = {snowy_tundra, snowy_tundra, snowy_tundra, snowy_taiga};
 
@@ -879,7 +872,7 @@ int mapBiome(const Layer * l, int * out, int x, int z, int w, int h)
             int hasHighBit = (id & 0xf00);
             id &= ~0xf00;
 
-            if (mc <= MC_1_6)
+            if (mc < MC_1_0)
             {
                 if (id == ocean || id == mushroom_fields)
                 {
@@ -890,9 +883,9 @@ int mapBiome(const Layer * l, int * out, int x, int z, int w, int h)
                 cs = getChunkSeed(ss, i + x, j + z);
 
                 if (mc <= MC_1_1)
-                    v = oldBiomes11[mcFirstInt(cs, 6)];
+                    v = oldBiomes11[mcFirstInt(cs, sizeof(oldBiomes11)/sizeof(int))];
                 else
-                    v = oldBiomes[mcFirstInt(cs, 7)];
+                    v = oldBiomes[mcFirstInt(cs, sizeof(oldBiomes)/sizeof(int))];
 
                 if (id != plains && (v != taiga || mc <= MC_1_2))
                     v = snowy_tundra;
@@ -911,18 +904,18 @@ int mapBiome(const Layer * l, int * out, int x, int z, int w, int h)
                 {
                 case Warm:
                     if (hasHighBit) v = mcFirstIsZero(cs, 3) ? badlands_plateau : wooded_badlands_plateau;
-                    else v = warmBiomes[mcFirstInt(cs, 6)];
+                    else v = warmBiomes[mcFirstInt(cs, sizeof(warmBiomes)/sizeof(int))];
                     break;
                 case Lush:
                     if (hasHighBit) v = jungle;
-                    else v = lushBiomes[mcFirstInt(cs, 6)];
+                    else v = lushBiomes[mcFirstInt(cs, sizeof(lushBiomes)/sizeof(int))];
                     break;
                 case Cold:
                     if (hasHighBit) v = giant_tree_taiga;
-                    else v = coldBiomes[mcFirstInt(cs, 4)];
+                    else v = coldBiomes[mcFirstInt(cs, sizeof(coldBiomes)/sizeof(int))];
                     break;
                 case Freezing:
-                    v = snowBiomes[mcFirstInt(cs, 4)];
+                    v = snowBiomes[mcFirstInt(cs, sizeof(snowBiomes)/sizeof(int))];
                     break;
                 default:
                     v = mushroom_fields;
@@ -947,7 +940,7 @@ int mapNoise(const Layer * l, int * out, int x, int z, int w, int h)
     uint64_t ss = l->startSeed;
     uint64_t cs;
 
-    int mod = (l->mc <= MC_1_6) ? 2 : 299999;
+    int mod = (l->mc < MC_1_0) ? 2 : 299999;
 
     for (j = 0; j < h; j++)
     {
@@ -1121,7 +1114,7 @@ int mapHills(const Layer * l, int * out, int x, int z, int w, int h)
             int64_t idx = i + j*w;
             int bn = -1;
 
-            if (mc >= MC_1_7)
+            if (mc >= MC_1_0)
                 bn = (b11 - 2) % 29;
 
             if (bn == 1 && b11 >= 2 && !isShallowOcean(a11))
@@ -1163,7 +1156,7 @@ int mapHills(const Layer * l, int * out, int x, int z, int w, int h)
                         hillID = snowy_taiga_hills;
                         break;
                     case plains:
-                        if (mc <= MC_1_6) {
+                        if (mc < MC_1_0) {
                             hillID = forest;
                             break;
                         }
@@ -1180,11 +1173,11 @@ int mapHills(const Layer * l, int * out, int x, int z, int w, int h)
                         hillID = bamboo_jungle_hills;
                         break;
                     case ocean:
-                        if (mc >= MC_1_7)
+                        if (mc >= MC_1_0)
                             hillID = deep_ocean;
                         break;
                     case mountains:
-                        if (mc >= MC_1_7)
+                        if (mc >= MC_1_0)
                             hillID = wooded_mountains;
                         break;
                     case savanna:
@@ -1225,7 +1218,7 @@ int mapHills(const Layer * l, int * out, int x, int z, int w, int h)
                         if (areSimilar(mc, a01, a11)) equals++;
                         if (areSimilar(mc, a12, a11)) equals++;
 
-                        if (equals >= 3 + (mc <= MC_1_6))
+                        if (equals >= 3 + (mc < MC_1_0))
                             out[idx] = hillID;
                         else
                             out[idx] = a11;
@@ -1280,7 +1273,7 @@ int mapRiver(const Layer * l, int * out, int x, int z, int w, int h)
             int v10 = vz0[i+1];
             int v12 = vz2[i+1];
 
-            if (mc >= MC_1_7)
+            if (mc >= MC_1_0)
             {
                 v01 = reduceID(v01);
                 v11 = reduceID(v11);
@@ -1462,7 +1455,7 @@ int mapShore(const Layer * l, int * out, int x, int z, int w, int h)
                 continue;
             }
 
-            if (mc <= MC_1_6)
+            if (mc < MC_1_0)
             {
                 if (v11 == mountains)
                 {
@@ -1588,7 +1581,7 @@ int mapRiverMix(const Layer * l, int * out, int x, int z, int w, int h)
     {
         int v = out[idx];
 
-        if (buf[idx] == river && v != ocean && (mc <= MC_1_6 || !isOceanic(v)))
+        if (buf[idx] == river && v != ocean && (mc < MC_1_0 || !isOceanic(v)))
         {
             if (v == snowy_tundra)
                 v = frozen_river;
@@ -1604,28 +1597,84 @@ int mapRiverMix(const Layer * l, int * out, int x, int z, int w, int h)
     return 0;
 }
 
+int mapOceanEdge(const Layer * l, int * out, int x, int z, int w, int h)
+{
+    int pX = x - 1;
+    int pZ = z - 1;
+    int pW = w + 2;
+    int pH = h + 2;
+    int i, j;
+
+    int err = l->p->getMap(l->p, out, pX, pZ, pW, pH);
+    if unlikely(err != 0)
+        return err;
+
+    for (j = 0; j < h; j++)
+    {
+        int *vz0 = out + (j+0)*pW;
+        int *vz1 = out + (j+1)*pW;
+        int *vz2 = out + (j+2)*pW;
+
+        for (i = 0; i < w; i++)
+        {
+            int v01 = vz1[i+0];
+            int v11 = vz1[i+1];
+            int v21 = vz1[i+2];
+            int v10 = vz0[i+1];
+            int v12 = vz2[i+1];
+
+            if(v11 == warm_ocean && (
+                v01 == frozen_ocean ||
+                v21 == frozen_ocean ||
+                v10 == frozen_ocean ||
+                v12 == frozen_ocean ))
+            {
+                out[i + j*w] = ocean;
+            } 
+            else if(v11 == frozen_ocean && (
+                v01 == warm_ocean ||
+                v21 == warm_ocean ||
+                v10 == warm_ocean ||
+                v12 == warm_ocean ))
+            {
+                out[i + j*w] = ocean;
+            }
+            else
+            {
+                out[i + j*w] = v11;
+            }
+        }
+    }
+
+    return 0;
+}
 
 int mapOceanTemp(const Layer * l, int * out, int x, int z, int w, int h)
 {
     int64_t i, j;
-    const PerlinNoise *rnd = (const PerlinNoise*) l->noise;
+
+    uint64_t ss = l->startSeed;
+    uint64_t cs;
 
     for (j = 0; j < h; j++)
     {
         for (i = 0; i < w; i++)
         {
-            double tmp = samplePerlin(rnd, (i + x) / 8.0, (j + z) / 8.0, 0, 0, 0);
+            int tmp;
 
-            if (tmp > 0.4)
+            cs = getChunkSeed(ss, i + x, j + z);
+            tmp = mcFirstInt(cs, 100);
+
+            if (tmp < 8)
                 out[i + j*w] = warm_ocean;
-            else if (tmp > 0.2)
+            else if (tmp < 40)
                 out[i + j*w] = lukewarm_ocean;
-            else if (tmp < -0.4)
-                out[i + j*w] = frozen_ocean;
-            else if (tmp < -0.2)
+            else if (tmp < 58)
+                out[i + j*w] = ocean;
+            else if (tmp < 95)
                 out[i + j*w] = cold_ocean;
             else
-                out[i + j*w] = ocean;
+                out[i + j*w] = frozen_ocean;
         }
     }
 
@@ -1684,31 +1733,12 @@ int mapOceanMix(const Layer * l, int * out, int x, int z, int w, int h)
         {
             int landID = land[(i-lx0) + (j-lz0)*lw];
             int oceanID = out[i + j*w];
-            int replaceID = 0;
             int ii, jj;
 
             if (!isOceanic(landID))
             {
                 out[i + j*w] = landID;
                 continue;
-            }
-
-            if (oceanID == warm_ocean  ) replaceID = lukewarm_ocean;
-            if (oceanID == frozen_ocean) replaceID = cold_ocean;
-            if (replaceID)
-            {
-                for (ii = -8; ii <= 8; ii += 4)
-                {
-                    for (jj = -8; jj <= 8; jj += 4)
-                    {
-                        int id = land[(i+ii-lx0) + (j+jj-lz0)*lw];
-                        if (!isOceanic(id))
-                        {
-                            out[i + j*w] = replaceID;
-                            goto loop_x;
-                        }
-                    }
-                }
             }
 
             if (landID == deep_ocean)
@@ -1731,8 +1761,6 @@ int mapOceanMix(const Layer * l, int * out, int x, int z, int w, int h)
             }
 
             out[i + j*w] = oceanID;
-
-            loop_x:;
         }
     }
 

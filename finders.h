@@ -11,6 +11,7 @@ extern "C"
 #endif
 
 #define MASK48 (((int64_t)1 << 48) - 1)
+#define MASK32 (((int64_t)1 << 32) - 1)
 
 enum StructureType
 {
@@ -30,6 +31,9 @@ enum StructureType
     Ancient_City,
     Treasure,
     Mineshaft,
+    Ravine,
+    Lava_Lake,
+    Stronghold,
     Desert_Well,
     Geode,
     Fortress,
@@ -47,8 +51,8 @@ enum StructureType
 STRUCT(StructureConfig)
 {
     int32_t salt;
-    int8_t  regionSize;
-    int8_t  chunkRange;
+    int16_t regionSize;
+    int16_t chunkRange;
     uint8_t structType;
     int8_t  dim;
     float   rarity;
@@ -62,14 +66,9 @@ STRUCT(Pos3) { int x, y, z; };
 STRUCT(StrongholdIter)
 {
     Pos pos;        // accurate location of current stronghold
-    Pos nextapprox; // approxmimate location (+/-112 blocks) of next stronghold
     int index;      // stronghold index counter
-    int ringnum;    // ring number for index
-    int ringmax;    // max index within ring
-    int ringidx;    // index within ring
     double angle;   // next angle within ring
     double dist;    // next distance from origin (in chunks)
-    uint64_t rnds;  // random number seed (48 bit)
     int mc;         // minecraft version
 };
 
@@ -77,11 +76,15 @@ STRUCT(StrongholdIter)
 STRUCT(StructureVariant)
 {
     uint8_t abandoned   :1; // is zombie village
-    uint8_t giant       :1; // giant portal variant
+    uint8_t giant       :1; // giant portal variant & mega ravine
     uint8_t underground :1; // underground portal
+    uint8_t underwater  :1; // underwater ravine
     uint8_t airpocket   :1; // portal with air pocket
     uint8_t basement    :1; // igloo with basement
     uint8_t cracked     :1; // geode with crack
+    float_t thick;          // ravine thickness
+    float_t yaw;            // ravine yaw
+    float_t pitch;          // ravine pitch
     uint8_t size;           // geode size | igloo middel pieces
     uint8_t start;          // starting piece index
     short   biome;          // biome variant
@@ -233,6 +236,9 @@ Pos getLargeStructurePos(StructureConfig config, uint64_t seed, int regX, int re
 static inline ATTR(const)
 Pos getLargeStructureChunkInRegion(StructureConfig config, uint64_t seed, int regX, int regZ);
 
+int getStaticStronghold(StructureConfig sconf, uint64_t seed,
+    int regionX, int regionZ, Pos *pos);
+
 /* Checks a chunk area, starting at (chunkX, chunkZ) with size (chunkW, chunkH)
  * for Mineshaft positions. If not NULL, positions are written to the buffer
  * 'out' up to a maximum number of 'nout'. The return value is the number of
@@ -241,18 +247,21 @@ Pos getLargeStructureChunkInRegion(StructureConfig config, uint64_t seed, int re
 int getMineshafts(int mc, uint64_t seed, int chunkX, int chunkZ,
         int chunkW, int chunkH, Pos *out, int nout);
 
+int getRavines(int mc, uint64_t seed, int chunkX, int chunkZ,
+        int chunkW, int chunkH, Pos *out, int nout);
+
+int getGeodes(int mc, uint64_t seed, int chunkX, int chunkZ,
+        int chunkW, int chunkH, Pos *out, int nout);
+
+int getLavaLakes(int mc, uint64_t seed, int chunkX, int chunkZ,
+        int chunkW, int chunkH, Pos *out, int nout, int isDesert);
+
 // not exacly a structure
 static inline ATTR(const)
-int isSlimeChunk(uint64_t seed, int chunkX, int chunkZ)
+int isSlimeChunk(int chunkX, int chunkZ)
 {
-    uint64_t rnd = seed;
-    rnd += (int)(chunkX * 0x5ac0db);
-    rnd += (int)(chunkX * chunkX * 0x4c1906);
-    rnd += (int)(chunkZ * 0x5f24f);
-    rnd += (int)(chunkZ * chunkZ) * 0x4307a7ULL;
-    rnd ^= 0x3ad8025fULL;
-    setSeed(&rnd, rnd);
-    return nextInt(&rnd, 10) == 0;
+    seedSlimeChunk(chunkX, chunkZ);
+    return nextInt(10) == 0;
 }
 
 /* Finds the position and size of the small end islands in a given chunk.
@@ -277,31 +286,7 @@ int isEndChunkEmpty(const EndNoise *en, const SurfaceNoise *sn, uint64_t seed,
 // Finding Strongholds and Spawn
 //==============================================================================
 
-/* Finds the approximate location of the first stronghold (+/-112 blocks),
- * which can be determined from the lower 48 bits of the world seed without
- * biome checks. If 'sh' is not NULL, it will be initialized for iteration
- * using nextStronghold() to get the accurate stronghold locations, as well as
- * the subsequent approximate stronghold positions.
- *
- * @sh      : stronghold iterator to be initialized (nullable)
- * @mc      : minecraft version
- * @s48     : world seed (only 48-bit are relevant)
- *
- * Returns the approximate block position of the first stronghold.
- */
-Pos initFirstStronghold(StrongholdIter *sh, int mc, uint64_t s48);
-
-/* Performs the biome checks for the stronghold iterator and finds its accurate
- * location, as well as the approximate location of the next stronghold.
- *
- * @sh      : stronghold iteration state, holding position info
- * @g       : generator, should be initialized for Overworld generation,
- *            for version 1.19.3+ the generator may be left NULL to iterate
- *            over the approximate locations without biome check
- *
- * Returns the number of further strongholds after this one.
- */
-int nextStronghold(StrongholdIter *sh, const Generator *g);
+int nextVillageStronghold(StrongholdIter *sh, const Generator *g);
 
 
 /* Finds the approximate spawn point in the world.
@@ -390,9 +375,9 @@ inline static
 uint64_t chunkGenerateRnd(uint64_t worldSeed, int chunkX, int chunkZ)
 {
     uint64_t rnd;
-    setSeed(&rnd, worldSeed);
-    rnd = (nextLong(&rnd) * chunkX) ^ (nextLong(&rnd) * chunkZ) ^ worldSeed;
-    setSeed(&rnd, rnd);
+    JsetSeed(&rnd, worldSeed);
+    rnd = (JnextLong(&rnd) * chunkX) ^ (JnextLong(&rnd) * chunkZ) ^ worldSeed;
+    JsetSeed(&rnd, rnd);
     return rnd;
 }
 
@@ -436,12 +421,51 @@ enum
     END_CITY_PIECES_MAX = 421
 };
 
+/* Generate the structure pieces of a Stronghold. The maximum number of pieces
+ * that are generated is limited to 'n'. A buffer length of around 512 should
+ * be sufficient in practice.
+ */
+int getStrongholdPieces(Piece *list, int n, int mc, uint64_t seed, int chunkX, int chunkZ);
+enum
+{   // Stronghold piece types
+    SH_START,
+    SH_CORRIDOR,
+    SH_PRISON_HALL,
+    SH_LEFT_TURN,
+    SH_RIGHT_TURN,
+    SH_ROOM_CROSSING,
+    SH_STAIRS,
+    SH_SPIRAL_STAIRCASE,
+    SH_FIVE_WAY_CROSSING,
+    SH_CHEST_CORRIDOR,
+    SH_LIBRARY,
+    SH_PORTAL_ROOM,
+    SH_SMALL_CORRIDOR,
+    SH_PIECES_MAX = 512,
+    SH_WEIGHT_TYPES = 11,
+};
+
+STRUCT(StrongholdPortalFrame)
+{
+    Pos3 pos;
+    int frameId;
+    uint8_t hasEye;
+};
+
+/* Find the portal frame positions and eye states for the first Portal Room in
+ * a generated stronghold layout.
+ * Returns 12 on success, or 0 if no Portal Room was found.
+ */
+int getStrongholdPortalFrames(StrongholdPortalFrame *frames,
+        const Piece *list, int count, uint64_t seed);
+
 /* Generate the structure pieces of a Nether Fortress. The maximum number of
  * pieces that are generated is limited to 'n'. A buffer length of around 400
  * should be sufficient in practice, but a fortress can in theory contain many
  * more than that. The number of generated pieces is given by the return value.
  */
 int getFortressPieces(Piece *list, int n, int mc, uint64_t seed, int chunkX, int chunkZ);
+int getFortressSpawnerPos(const Piece *piece, Pos3 *spawner);
 enum
 {   // Fortress piece types
     FORTRESS_START,
@@ -462,6 +486,9 @@ enum
     PIECE_COUNT,
 };
 
+
+int getEndGatewayPos(uint64_t seed, EndNoise en, SurfaceNoise sn, int chunkX, int chunkZ, Pos *pos);
+
 /* Find the 20 fixed inner positions where End Gateways generate upon defeating
  * the Dragon. The positions are written to 'src' in generation order.
  */
@@ -472,7 +499,7 @@ void getFixedEndGateways(int mc, uint64_t seed, Pos src[20]);
  */
 Pos getLinkedGatewayChunk(const EndNoise *en, const SurfaceNoise *sn,
     uint64_t seed, Pos src, Pos *dst);
-Pos getLinkedGatewayPos(const EndNoise *en, const SurfaceNoise *sn,
+Pos3 getLinkedGatewayPos(const EndNoise *en, const SurfaceNoise *sn,
     uint64_t seed, Pos src);
 
 
@@ -492,6 +519,24 @@ enum
 };
 uint64_t getHouseList(int *houses, uint64_t seed, int chunkX, int chunkZ);
 
+enum
+{
+    VP_WELL    = 0,
+    VP_PATH    = 1,
+    VP_TORCH   = 2,
+    VP_HOUSE4G = 3,
+    VP_CHURCH  = 4,
+    VP_HOUSE1  = 5,
+    VP_WOODHUT = 6,
+    VP_HALL    = 7,
+    VP_FIELD1  = 8,
+    VP_FIELD2  = 9,
+    VP_HOUSE2  = 10,
+    VP_HOUSE3  = 11,
+    VP_PIECES_MAX = 512,
+};
+
+int getPreVillagePieces(Piece *list, int n, uint64_t seed, int chunkX, int chunkZ);
 
 
 //==============================================================================
@@ -755,6 +800,11 @@ Pos getFeatureChunkInRegion(StructureConfig config, uint64_t seed, int regX, int
     pos.z = nextInt(&seed, 24);
     */
     Pos pos;
+    switch(config.structType)
+    {
+    case Trail_Ruins:
+    case Trial_Chambers:
+    {
     const uint64_t K = 0x5deece66dULL;
     const uint64_t M = (1ULL << 48) - 1;
     const uint64_t b = 0xb;
@@ -778,6 +828,14 @@ Pos getFeatureChunkInRegion(StructureConfig config, uint64_t seed, int regX, int
         seed = (seed * K + b) & M;
         pos.z = (int)((r * (seed >> 17)) >> 31);
     }
+    break;
+    }
+    default: // other structures
+        setRegionSeed(seed, regX, regZ, config.salt);
+        pos.x = nextInt(config.chunkRange);
+        pos.z = nextInt(config.chunkRange);
+        break;
+    }
 
     return pos;
 }
@@ -787,8 +845,8 @@ Pos getFeaturePos(StructureConfig config, uint64_t seed, int regX, int regZ)
 {
     Pos pos = getFeatureChunkInRegion(config, seed, regX, regZ);
 
-    pos.x = (int)(((uint64_t)regX*config.regionSize + pos.x) << 4);
-    pos.z = (int)(((uint64_t)regZ*config.regionSize + pos.z) << 4);
+    pos.x = (int)(((uint64_t)regX*config.regionSize + pos.x) << 4)+8;
+    pos.z = (int)(((uint64_t)regZ*config.regionSize + pos.z) << 4)+8;
     return pos;
 }
 
@@ -796,6 +854,11 @@ static inline ATTR(const)
 Pos getLargeStructureChunkInRegion(StructureConfig config, uint64_t seed, int regX, int regZ)
 {
     Pos pos;
+    switch(config.structType)
+    {
+    case Trail_Ruins:
+    case Trial_Chambers:
+    {
     const uint64_t K = 0x5deece66dULL;
     const uint64_t M = (1ULL << 48) - 1;
     const uint64_t b = 0xb;
@@ -818,6 +881,14 @@ Pos getLargeStructureChunkInRegion(StructureConfig config, uint64_t seed, int re
 
     pos.x >>= 1;
     pos.z >>= 1;
+    break;
+    }
+    default: // other structures
+        setRegionSeed(seed, regX, regZ, config.salt);
+        pos.x = (nextInt(config.chunkRange) + nextInt(config.chunkRange)) / 2;
+        pos.z = (nextInt(config.chunkRange) + nextInt(config.chunkRange)) / 2;
+        break;
+    }
 
     return pos;
 }
@@ -827,11 +898,39 @@ Pos getLargeStructurePos(StructureConfig config, uint64_t seed, int regX, int re
 {
     Pos pos = getLargeStructureChunkInRegion(config, seed, regX, regZ);
 
-    pos.x = (int)(((uint64_t)regX*config.regionSize + pos.x) << 4);
-    pos.z = (int)(((uint64_t)regZ*config.regionSize + pos.z) << 4);
+    pos.x = (int)(((uint64_t)regX*config.regionSize + pos.x) << 4)+8;
+    pos.z = (int)(((uint64_t)regZ*config.regionSize + pos.z) << 4)+8;
     return pos;
 }
 
+static inline ATTR(const)
+Pos chunkToRegion(int chunkX, int chunkZ, int regionSize)
+{
+    Pos p;
+    p.x = (chunkX < 0 ? chunkX - regionSize + 1 : chunkX) / regionSize;
+    p.z = (chunkZ < 0 ? chunkZ - regionSize + 1 : chunkZ) / regionSize;
+    return p;
+}
+
+// village 1.0-1.10
+static inline int regionOffset(int coord, int regionSize) {
+    int offset = coord % regionSize;
+    return (offset < 0) ? offset + regionSize : offset;
+}
+
+static inline ATTR(const)
+int isVillageChunk(StructureConfig config, uint64_t seed, int chunkX, int chunkZ)
+{
+    int regionSize = 40;
+    int chunkRange = 28;//40 - 12
+    Pos reg = chunkToRegion(chunkX, chunkZ, 1/*regionSize*/);
+    setRegionSeed(seed, reg.x, reg.z, config.salt);
+    int vchunkX = nextInt(chunkRange) + chunkX - regionOffset(chunkX, regionSize);
+    if (vchunkX != chunkX) return 0;
+    int vchunkZ = nextInt(chunkRange) + chunkZ - regionOffset(chunkZ, regionSize);
+    if (vchunkZ != chunkZ) return 0;
+    return 1;
+}
 
 
 #ifdef __cplusplus

@@ -2,6 +2,7 @@
 #define NOISE_H_
 
 #include "rng.h"
+#include "mt.h"
 #include <math.h>
 
 STRUCT(PerlinNoise)
@@ -45,7 +46,7 @@ double maintainPrecision(double x)
 }
 
 /// Perlin noise
-void perlinInit(PerlinNoise *noise, uint64_t *seed);
+void perlinInit(PerlinNoise *noise);
 void xPerlinInit(PerlinNoise *noise, Xoroshiro *xr);
 
 double samplePerlin(const PerlinNoise *noise, double x, double y, double z,
@@ -53,7 +54,7 @@ double samplePerlin(const PerlinNoise *noise, double x, double y, double z,
 double sampleSimplex2D(const PerlinNoise *noise, double x, double y);
 
 /// Perlin Octaves
-void octaveInit(OctaveNoise *noise, uint64_t *seed, PerlinNoise *octaves,
+void octaveInit(OctaveNoise *noise, PerlinNoise *octaves,
         int omin, int len);
 void octaveInitBeta(OctaveNoise *noise, uint64_t *seed, PerlinNoise *octaves,
         int octcnt, double lac, double lacMul, double persist, double persistMul);
@@ -69,7 +70,7 @@ void sampleOctaveBeta17Terrain(const OctaveNoise *noise, double *v,
         double x, double z, int yLacFlag, double lacmin);
 
 /// Double Perlin
-void doublePerlinInit(DoublePerlinNoise *noise, uint64_t *seed,
+void doublePerlinInit(DoublePerlinNoise *noise,
         PerlinNoise *octavesA, PerlinNoise *octavesB, int omin, int len);
 int xDoublePerlinInit(DoublePerlinNoise *noise, Xoroshiro *xr,
         PerlinNoise *octaves, const double *amplitudes, int omin, int len, int nmax);

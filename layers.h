@@ -66,6 +66,7 @@ enum LayerId
     L_SMOOTH_4_RIVER,
     L_RIVER_MIX_4,
     L_OCEAN_TEMP_256,       L13_OCEAN_TEMP_256 = L_OCEAN_TEMP_256,  // 1.13+
+    L_OCEAN_EDGE_256,                                               // 1.13+
     L_ZOOM_128_OCEAN,       L13_ZOOM_128 = L_ZOOM_128_OCEAN,        // 1.13+
     L_ZOOM_64_OCEAN,        L13_ZOOM_64 = L_ZOOM_64_OCEAN,          // 1.13+
     L_ZOOM_32_OCEAN,        L13_ZOOM_32 = L_ZOOM_32_OCEAN,          // 1.13+
@@ -165,6 +166,7 @@ mapfunc_t mapShore;
 mapfunc_t mapSwampRiver;
 mapfunc_t mapRiverMix;
 mapfunc_t mapOceanTemp;
+mapfunc_t mapOceanEdge;
 mapfunc_t mapOceanMix;
 
 // final layer 1:1

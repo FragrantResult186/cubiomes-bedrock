@@ -21,6 +21,7 @@ set(HEADERS
 	rng.h
 	util.h
 	quadbase.h
+	mt.h
 )
 set(SOURCES
 	finders.c
@@ -31,6 +32,7 @@ set(SOURCES
 	noise.c
 	util.c
 	quadbase.c
+	mt.c
 )
 
 add_library(objects OBJECT ${SOURCES})

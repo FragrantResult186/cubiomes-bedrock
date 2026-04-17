@@ -46,13 +46,13 @@ static inline double indexedLerp(uint8_t idx, double a, double b, double c)
 }
 #endif
 
-void perlinInit(PerlinNoise *noise, uint64_t *seed)
+void perlinInit(PerlinNoise *noise)
 {
     int i = 0;
     //memset(noise, 0, sizeof(*noise));
-    noise->a = nextDouble(seed) * 256.0;
-    noise->b = nextDouble(seed) * 256.0;
-    noise->c = nextDouble(seed) * 256.0;
+    noise->a = nextFloat() * 256.0;
+    noise->b = nextFloat() * 256.0;
+    noise->c = nextFloat() * 256.0;
     noise->amplitude = 1.0;
     noise->lacunarity = 1.0;
 
@@ -63,7 +63,7 @@ void perlinInit(PerlinNoise *noise, uint64_t *seed)
     }
     for (i = 0; i < 256; i++)
     {
-        int j = nextInt(seed, 256 - i) + i;
+        int j = nextInt(256 - i) + i;
         uint8_t n = idx[i];
         idx[i] = idx[j];
         idx[j] = n;
@@ -330,7 +330,7 @@ double sampleSimplex2D(const PerlinNoise *noise, double x, double y)
     return 70.0 * t;
 }
 
-void octaveInit(OctaveNoise *noise, uint64_t *seed, PerlinNoise *octaves,
+void octaveInit(OctaveNoise *noise, PerlinNoise *octaves,
         int omin, int len)
 {
     int i;
@@ -346,7 +346,7 @@ void octaveInit(OctaveNoise *noise, uint64_t *seed, PerlinNoise *octaves,
 
     if (end == 0)
     {
-        perlinInit(&octaves[0], seed);
+        perlinInit(&octaves[0]);
         octaves[0].amplitude = persist;
         octaves[0].lacunarity = lacuna;
         persist *= 2.0;
@@ -355,13 +355,12 @@ void octaveInit(OctaveNoise *noise, uint64_t *seed, PerlinNoise *octaves,
     }
     else
     {
-        skipNextN(seed, -end*262);
         i = 0;
     }
 
     for (; i < len; i++)
     {
-        perlinInit(&octaves[i], seed);
+        perlinInit(&octaves[i]);
         octaves[i].amplitude = persist;
         octaves[i].lacunarity = lacuna;
         persist *= 2.0;
@@ -378,7 +377,7 @@ void octaveInitBeta(OctaveNoise *noise, uint64_t *seed, PerlinNoise *octaves,
     int i;
     for (i = 0; i < octcnt; i++)
     {
-        perlinInit(&octaves[i], seed);
+        perlinInit(&octaves[i]);
         octaves[i].amplitude = persist;
         octaves[i].lacunarity = lac;
         persist *= persistMul;
@@ -516,12 +515,12 @@ void sampleOctaveBeta17Terrain(const OctaveNoise *noise, double *v,
 }
 
 
-void doublePerlinInit(DoublePerlinNoise *noise, uint64_t *seed,
+void doublePerlinInit(DoublePerlinNoise *noise,
         PerlinNoise *octavesA, PerlinNoise *octavesB, int omin, int len)
 {   // require: len >= 1 && omin+len <= 0
-    noise->amplitude = (10.0 / 6.0) * len / (len + 1);
-    octaveInit(&noise->octA, seed, octavesA, omin, len);
-    octaveInit(&noise->octB, seed, octavesB, omin, len);
+    noise->amplitude = (10.0 / 6.0) * (len+1) / (len+2);
+    octaveInit(&noise->octA, octavesA, omin, len);
+    octaveInit(&noise->octB, octavesB, omin, len);
 }
 
 /**

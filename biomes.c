@@ -12,13 +12,16 @@ int biomeExists(int mc, int id)
             return 1;
 
         if (id == pale_garden)
-            return mc >= MC_1_21_WD;
+            return mc >= MC_1_21_50;
 
         if (id == cherry_grove)
             return mc >= MC_1_20;
 
         if (id == deep_dark || id == mangrove_swamp)
-            return mc >= MC_1_19_2;
+            return mc >= MC_1_19;
+
+        if (id == the_end)
+            return mc >= MC_1_0;
 
         switch (id)
         {
@@ -31,7 +34,6 @@ int biomeExists(int mc, int id)
         case swamp:
         case river:
         case nether_wastes:
-        case the_end:
         case frozen_ocean:
         case frozen_river:
         case snowy_tundra:              // snowy_plains
@@ -113,7 +115,6 @@ int biomeExists(int mc, int id)
         case snowy_tundra:
         case mushroom_fields:
         case mushroom_field_shore:
-        case the_end:
             return 0;
         }
     }
@@ -133,14 +134,14 @@ int biomeExists(int mc, int id)
 
     if (id >= ocean             && id <= mountain_edge)     return 1;
     if (id >= jungle            && id <= jungle_hills)      return mc >= MC_1_2;
-    if (id >= jungle_edge       && id <= badlands_plateau)  return mc >= MC_1_7;
-    if (id >= small_end_islands && id <= end_barrens)       return mc >= MC_1_9;
+    if (id >= jungle_edge       && id <= badlands_plateau)  return mc >= MC_1_0;
+    if (id >= small_end_islands && id <= end_barrens)       return mc >= MC_1_0;
     if (id >= warm_ocean        && id <= deep_frozen_ocean) return mc >= MC_1_13;
 
     switch (id)
     {
     case the_void:
-        return mc >= MC_1_9;
+        return mc >= MC_1_0;
     case sunflower_plains:
     case desert_lakes:
     case gravelly_mountains:
@@ -162,7 +163,7 @@ int biomeExists(int mc, int id)
     case eroded_badlands:
     case modified_wooded_badlands_plateau:
     case modified_badlands_plateau:
-        return mc >= MC_1_7;
+        return mc >= MC_1_0;
     case bamboo_jungle:
     case bamboo_jungle_hills:
         return mc >= MC_1_14;
@@ -170,7 +171,7 @@ int biomeExists(int mc, int id)
     case crimson_forest:
     case warped_forest:
     case basalt_deltas:
-        return mc >= MC_1_16_1;
+        return mc >= MC_1_16;
     case dripstone_caves:
     case lush_caves:
         return mc >= MC_1_17;
@@ -193,9 +194,9 @@ int isOverworld(int mc, int id)
     case the_end:
         return 0;
     case frozen_ocean:
-        return mc <= MC_1_6 || mc >= MC_1_13;
+        return mc < MC_1_0 || mc >= MC_1_13;
     case mountain_edge:
-        return mc <= MC_1_6;
+        return mc < MC_1_0;
     case deep_warm_ocean:
     case the_void:
         return 0;
@@ -299,11 +300,9 @@ int getCategory(int mc, int id)
     case eroded_badlands:
     case modified_wooded_badlands_plateau:
     case modified_badlands_plateau:
-        return mesa;
-
     case wooded_badlands_plateau:
     case badlands_plateau:
-        return mc <= MC_1_15 ? mesa : badlands_plateau;
+        return mesa;
 
     case mushroom_fields:
     case mushroom_field_shore:
@@ -369,12 +368,6 @@ int getCategory(int mc, int id)
 int areSimilar(int mc, int id1, int id2)
 {
     if (id1 == id2) return 1;
-
-    if (mc <= MC_1_15)
-    {
-        if (id1 == wooded_badlands_plateau || id1 == badlands_plateau)
-            return id2 == wooded_badlands_plateau || id2 == badlands_plateau;
-    }
 
     return getCategory(mc, id1) == getCategory(mc, id2);
 }
