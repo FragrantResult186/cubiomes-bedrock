@@ -252,7 +252,7 @@ const char *biome2str(int mc, int id)
     case cherry_grove: return "cherry_grove";
     // 1.21.50 (Winter Drop)
     case pale_garden: return "pale_garden";
-    // 1.26.2
+    // 26.20
     case sulfur_caves: return "sulfur_caves";
     }
     return NULL;
