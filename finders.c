@@ -2050,17 +2050,20 @@ int getVariant(StructureVariant *r, int structType, int mc, uint64_t seed,
             else if (t < 3) { r->start = 2; sx = 11; sy = 6; sz = 11; } // savanna_meeting_point_2
             else if (t < 6) { r->start = 3; sx =  9; sy = 6; sz = 11; } // savanna_meeting_point_3
             else if (t < 9) { r->start = 4; sx =  9; sy = 6; sz =  9; } // savanna_meeting_point_4
+            else  UNREACHABLE();
             break;
         case taiga:
             t = nextInt(2+2);
             if      (t < 2) { r->start = 1; sx = 22; sy = 3; sz = 18; } // taiga_meeting_point_1
             else if (t < 4) { r->start = 2; sx =  9; sy = 7; sz =  9; } // taiga_meeting_point_2
+            else  UNREACHABLE();
             break;
         // case snowy_plains:
         //     t = nextInt(?+?+?);
         //     if      (t < ?) { r->start = 1; sx = 12; sy = 8; sz =  8; } // snowy_meeting_point_1
         //     else if (t < ?) { r->start = 2; sx = 11; sy = 5; sz =  9; } // snowy_meeting_point_2
         //     else if (t < ?) { r->start = 3; sx =  7; sy = 7; sz =  7; } // snowy_meeting_point_3
+        //     else  UNREACHABLE();
         //     break;
         default:
             sx = sy = sz = 0;
