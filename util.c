@@ -73,14 +73,14 @@ const char* mc2str(int mc)
     case MC_1_21:    return "1.21"; break;
     case MC_1_21_50: return "1.21.50"; break;
     case MC_1_21_60: return "1.21.60"; break;
-    case MC_1_26_20: return "1.26.20"; break;
+    case MC_1_26_2: return "1.26.2"; break;
     default:         return "?";
     }
 }
 
 int str2mc(const char *s)
 {
-    if (!strcmp(s, "1.26.20"))  return MC_1_26_20;
+    if (!strcmp(s, "1.26.2"))  return MC_1_26_2;
     if (!strcmp(s, "1.21"))     return MC_1_21;
     if (!strcmp(s, "1.21.0"))   return MC_1_21_0;
     if (!strcmp(s, "1.21.50"))  return MC_1_21_50;
@@ -252,6 +252,8 @@ const char *biome2str(int mc, int id)
     case cherry_grove: return "cherry_grove";
     // 1.21.50 (Winter Drop)
     case pale_garden: return "pale_garden";
+    // 1.26.2
+    case sulfur_caves: return "sulfur_caves";
     }
     return NULL;
 }
@@ -398,6 +400,7 @@ void initBiomeColors(unsigned char colors[256][3])
     setColor(colors, mangrove_swamp,                   0x2ccc8e); // -
     setColor(colors, cherry_grove,                     0xff91c8); // -
     setColor(colors, pale_garden,                      0x696d95); // -
+    setColor(colors, sulfur_caves,                     0xC8D232); // -
 }
 
 void initBiomeTypeColors(unsigned char colors[256][3])
