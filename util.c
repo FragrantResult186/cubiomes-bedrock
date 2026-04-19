@@ -73,14 +73,14 @@ const char* mc2str(int mc)
     case MC_1_21:    return "1.21"; break;
     case MC_1_21_50: return "1.21.50"; break;
     case MC_1_21_60: return "1.21.60"; break;
-    case MC_1_26_2: return "1.26.2"; break;
+    case MC_26_2:    return "26.2"; break;
     default:         return "?";
     }
 }
 
 int str2mc(const char *s)
 {
-    if (!strcmp(s, "1.26.2"))  return MC_1_26_2;
+    if (!strcmp(s, "26.2"))     return MC_26_2;
     if (!strcmp(s, "1.21"))     return MC_1_21;
     if (!strcmp(s, "1.21.0"))   return MC_1_21_0;
     if (!strcmp(s, "1.21.50"))  return MC_1_21_50;
