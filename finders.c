@@ -26,7 +26,7 @@ int getStructureConfig(int structureType, int mc, StructureConfig *sconf)
     s_jungle_temple         = { 14357617, 32, 24, Jungle_Pyramid,   DIM_OVERWORLD, 0},
     s_swamp_hut             = { 14357617, 32, 24, Swamp_Hut,        DIM_OVERWORLD, 0},
     s_outpost               = {165745296, 80, 56, Outpost,          DIM_OVERWORLD, 0},
-    s_village_110           = { 10387312,  1,  1, Village,          DIM_OVERWORLD, 0},// potentially generated chunk-by-chunk
+    s_village_110           = { 10387312,  1,  1, Village,          DIM_OVERWORLD, 50},// potentially generated chunk-by-chunk
     s_village_117           = { 10387312, 27, 17, Village,          DIM_OVERWORLD, 0.2 },// abandoned
     s_village_1730          = { 10387312, 27, 17, Village,          DIM_OVERWORLD, 0.02},// abandoned
     s_village               = { 10387312, 34, 26, Village,          DIM_OVERWORLD, 0.02},// abandoned
@@ -2012,7 +2012,7 @@ int getVariant(StructureVariant *r, int structType, int mc, uint64_t seed,
             int regX = cx < 0 ? cx - 40+1 : cx;
             int regZ = cz < 0 ? cz - 40+1 : cz;
             setRegionSeed(seed, regX, regZ, 10387312);
-            r->abandoned = nextInt(50) == 0;
+            r->abandoned = nextInt(sc.salt) == 0;
             return 0;
         }
         if (!isViableFeatureBiome(mc, Village, biomeID))
@@ -2058,13 +2058,13 @@ int getVariant(StructureVariant *r, int structType, int mc, uint64_t seed,
             else if (t < 4) { r->start = 2; sx =  9; sy = 7; sz =  9; } // taiga_meeting_point_2
             else  UNREACHABLE();
             break;
-        // case snowy_plains:
-        //     t = nextInt(?+?+?);
-        //     if      (t < ?) { r->start = 1; sx = 12; sy = 8; sz =  8; } // snowy_meeting_point_1
-        //     else if (t < ?) { r->start = 2; sx = 11; sy = 5; sz =  9; } // snowy_meeting_point_2
-        //     else if (t < ?) { r->start = 3; sx =  7; sy = 7; sz =  7; } // snowy_meeting_point_3
-        //     else  UNREACHABLE();
-        //     break;
+        case snowy_plains:
+            t = nextInt(2+1+3);
+            if      (t < 2) { r->start = 1; sx = 12; sy = 8; sz =  8; } // snowy_meeting_point_1
+            else if (t < 3) { r->start = 2; sx = 11; sy = 5; sz =  9; } // snowy_meeting_point_2
+            else if (t < 6) { r->start = 3; sx =  7; sy = 7; sz =  7; } // snowy_meeting_point_3
+            else  UNREACHABLE();
+            break;
         default:
             sx = sy = sz = 0;
             return 0;
@@ -2076,12 +2076,6 @@ int getVariant(StructureVariant *r, int structType, int mc, uint64_t seed,
         skipNextN(3);
         r->rotation = nextInt(4);
         r->start = 3 - nextInt(4); // ooposite 0->3, 1->2, 2->1, 3->0
-        if (mc == MC_1_16)
-        {   // swapped in 1.16.1 only
-            uint8_t tmp = r->start;
-            r->start = r->rotation;
-            r->rotation = tmp;
-        }
         switch (r->start)
         {
         case 0: sx = 46; sy = 24; sz = 46; break; // units/air_base
@@ -3766,6 +3760,410 @@ int getFortressSpawnerPos(const Piece *piece, Pos3 *spawner)
     default:
         return 0;
     }
+}
+
+//==============================================================================
+// Mineshaft Generator
+//==============================================================================
+
+typedef struct
+{
+    Piece *list;
+    int count;
+    int nmax;
+    int type;
+} MineshaftEnv;
+
+static
+const char *mineshaft_piece_names[] = {
+    "MineshaftRoom",
+    "MineshaftCorridor",
+    "MineshaftCrossing",
+    "MineshaftStairs",
+};
+
+static
+Piece *addMineshaftPiece(MineshaftEnv *env, int typ,
+        int x, int y, int z, int facing, int depth, Pos3 bb0, Pos3 bb1)
+{
+    Piece *p;
+
+    if (env->count >= env->nmax)
+        return NULL;
+    if (getNextIntersectingPiece(env->list, env->count, bb0, bb1) != NULL)
+        return NULL;
+
+    p = env->list + env->count++;
+    memset(p, 0, sizeof(*p));
+    p->name = mineshaft_piece_names[typ];
+    p->pos = (Pos3){x, y, z};
+    p->bb0 = bb0;
+    p->bb1 = bb1;
+    p->rot = facing;
+    p->depth = depth;
+    p->type = typ;
+    return p;
+}
+
+static
+Piece *addMineshaftRoom(MineshaftEnv *env, int x, int y, int z)
+{
+    Pos3 bb0 = {x, y, z};
+    Pos3 bb1;
+    // z->y->x in bedrock
+    bb1.z = z + nextInt(6) + 7;
+    bb1.y = y + nextInt(6) + 4;
+    bb1.x = x + nextInt(6) + 7;
+    return addMineshaftPiece(env, MSHFT_ROOM, x, y, z, 0, 0, bb0, bb1);
+}
+
+static
+Piece *findMineshaftCorridor(MineshaftEnv *env,
+        int x, int y, int z, int facing, int depth)
+{
+    int attempts = nextInt(3) + 2;
+    for (; attempts > 0; attempts--)
+    {
+        Pos3 bb0, bb1;
+        strongholdRotatedBox(&bb0, &bb1, x, y, z, 0, 0, 0, 3, 3, attempts * 5, facing);
+        if (getNextIntersectingPiece(env->list, env->count, bb0, bb1) == NULL)
+        {
+            Piece *p = addMineshaftPiece(env, MSHFT_CORRIDOR,
+                x, y, z, facing, depth, bb0, bb1);
+            if (p == NULL)
+                return NULL;
+            int hasRails = nextInt(3) == 0;
+            if (!hasRails)
+                nextInt(23); // spider corridor
+            return p;
+        }
+    }
+    return NULL;
+}
+
+static
+Piece *findMineshaftCrossing(MineshaftEnv *env,
+        int x, int y, int z, int facing, int depth)
+{
+    int sizeY = 2;
+    Pos3 bb0, bb1;
+    if (nextInt(4) == 0)
+        sizeY += 4;
+    strongholdRotatedBox(&bb0, &bb1, x, y, z, -1, 0, 0, 5, sizeY + 1, 5, facing);
+    return addMineshaftPiece(env, MSHFT_CROSSING, x, y, z, facing, depth, bb0, bb1);
+}
+
+static
+Piece *findMineshaftStairs(MineshaftEnv *env,
+        int x, int y, int z, int facing, int depth)
+{
+    Pos3 bb0, bb1;
+    strongholdRotatedBox(&bb0, &bb1, x, y, z, 0, -5, 0, 3, 8, 9, facing);
+    return addMineshaftPiece(env, MSHFT_STAIRS, x, y, z, facing, depth, bb0, bb1);
+}
+
+static Piece *generateAndAddMineshaftPiece(MineshaftEnv *env,
+        int x, int y, int z, int facing, int genDepth);
+
+static
+void addMineshaftRoomChildren(MineshaftEnv *env, const Piece *p)
+{
+    int axisLen, k, j, x, y, z;
+    float prob = env->type == MINESHAFT_MESA ? 0.5f : 1.0f;
+
+    if (nextFloat() > prob) // 50% spawn rate in mesa biomes
+        return;
+
+    k = p->bb1.y - p->bb0.y - 3;
+    if (k < 1)
+        k = 1;
+
+    axisLen = p->bb1.x - p->bb0.x + 1;
+    for (j = 0; j < axisLen; )
+    {
+        j += nextInt(axisLen);
+        if (j + 3 > axisLen)
+            break;
+        x = p->bb0.x + j;
+        y = p->bb0.y + nextInt(k) + 1;
+        z = p->bb0.z - 1;
+        generateAndAddMineshaftPiece(env, x, y, z, 0, p->depth);
+        j += 4;
+    }
+    for (j = 0; j < axisLen; )
+    {
+        j += nextInt(axisLen);
+        if (j + 3 > axisLen)
+            break;
+        x = p->bb0.x + j;
+        y = p->bb0.y + nextInt(k) + 1;
+        z = p->bb1.z + 1;
+        generateAndAddMineshaftPiece(env, x, y, z, 2, p->depth);
+        j += 4;
+    }
+
+    axisLen = p->bb1.z - p->bb0.z + 1;
+    for (j = 0; j < axisLen; )
+    {
+        j += nextInt(axisLen);
+        if (j + 3 > axisLen)
+            break;
+        x = p->bb0.x - 1;
+        y = p->bb0.y + nextInt(k) + 1;
+        z = p->bb0.z + j;
+        generateAndAddMineshaftPiece(env, x, y, z, 3, p->depth);
+        j += 4;
+    }
+    for (j = 0; j < axisLen; )
+    {
+        j += nextInt(axisLen);
+        if (j + 3 > axisLen)
+            break;
+        x = p->bb1.x + 1;
+        y = p->bb0.y + nextInt(k) + 1;
+        z = p->bb0.z + j;
+        generateAndAddMineshaftPiece(env, x, y, z, 1, p->depth);
+        j += 4;
+    }
+}
+
+static
+void addMineshaftCorridorChildren(MineshaftEnv *env, const Piece *p)
+{
+    int branchType = nextInt(4);
+    int yOffset = nextInt(3);
+    int minX = p->bb0.x, minY = p->bb0.y, minZ = p->bb0.z;
+    int maxX = p->bb1.x, maxY = p->bb1.y, maxZ = p->bb1.z;
+    int x, z, branch;
+    (void) maxY;
+
+    switch (branchType)
+    {
+    case 0:
+    case 1:
+        switch (p->rot)
+        {
+        case 0: generateAndAddMineshaftPiece(env, minX,     minY - 1 + yOffset, minZ - 1, 0, p->depth); break;
+        case 2: generateAndAddMineshaftPiece(env, minX,     minY - 1 + yOffset, maxZ + 1, 2, p->depth); break;
+        case 3: generateAndAddMineshaftPiece(env, minX - 1, minY - 1 + yOffset, minZ,     3, p->depth); break;
+        case 1: generateAndAddMineshaftPiece(env, maxX + 1, minY - 1 + yOffset, minZ,     1, p->depth); break;
+        default: UNREACHABLE();
+        }
+        break;
+    case 2:
+        switch (p->rot)
+        {
+        case 0: generateAndAddMineshaftPiece(env, minX - 1, minY - 1 + yOffset, minZ,     3, p->depth); break;
+        case 2: generateAndAddMineshaftPiece(env, minX - 1, minY - 1 + yOffset, maxZ - 3, 3, p->depth); break;
+        case 3: generateAndAddMineshaftPiece(env, minX,     minY - 1 + yOffset, minZ - 1, 0, p->depth); break;
+        case 1: generateAndAddMineshaftPiece(env, maxX - 3, minY - 1 + yOffset, minZ - 1, 0, p->depth); break;
+        default: UNREACHABLE();
+        }
+        break;
+    case 3:
+        switch (p->rot)
+        {
+        case 0: generateAndAddMineshaftPiece(env, maxX + 1, minY - 1 + yOffset, minZ,     1, p->depth); break;
+        case 2: generateAndAddMineshaftPiece(env, maxX + 1, minY - 1 + yOffset, maxZ - 3, 1, p->depth); break;
+        case 3: generateAndAddMineshaftPiece(env, minX,     minY - 1 + yOffset, maxZ + 1, 2, p->depth); break;
+        case 1: generateAndAddMineshaftPiece(env, maxX - 3, minY - 1 + yOffset, maxZ + 1, 2, p->depth); break;
+        default: UNREACHABLE();
+        }
+        break;
+    default:
+        UNREACHABLE();
+    }
+
+    if (p->depth >= 8)
+        return;
+
+    if (p->rot == 0 || p->rot == 2)
+    {
+        for (z = minZ + 3; z + 3 <= maxZ; z += 5)
+        {
+            branch = nextInt(5);
+            if      (branch == 0) generateAndAddMineshaftPiece(env, minX - 1, minY, z, 3, p->depth + 1);
+            else if (branch == 1) generateAndAddMineshaftPiece(env, maxX + 1, minY, z, 1, p->depth + 1);
+        }
+    }
+    else
+    {
+        for (x = minX + 3; x + 3 <= maxX; x += 5)
+        {
+            branch = nextInt(5);
+            if      (branch == 0) generateAndAddMineshaftPiece(env, x, minY, minZ - 1, 0, p->depth + 1);
+            else if (branch == 1) generateAndAddMineshaftPiece(env, x, minY, maxZ + 1, 2, p->depth + 1);
+        }
+    }
+}
+
+static
+void addMineshaftCrossingChildren(MineshaftEnv *env, const Piece *p)
+{
+    int minX = p->bb0.x, minY = p->bb0.y, minZ = p->bb0.z;
+    int maxX = p->bb1.x, maxZ = p->bb1.z;
+    int twoFloored = (p->bb1.y - p->bb0.y + 1) > 3;
+
+    switch (p->rot)
+    {
+    case 0:
+        generateAndAddMineshaftPiece(env, minX + 1, minY, minZ - 1, 0, p->depth);
+        generateAndAddMineshaftPiece(env, minX - 1, minY, minZ + 1, 3, p->depth);
+        generateAndAddMineshaftPiece(env, maxX + 1, minY, minZ + 1, 1, p->depth);
+        break;
+    case 2:
+        generateAndAddMineshaftPiece(env, minX + 1, minY, maxZ + 1, 2, p->depth);
+        generateAndAddMineshaftPiece(env, minX - 1, minY, minZ + 1, 3, p->depth);
+        generateAndAddMineshaftPiece(env, maxX + 1, minY, minZ + 1, 1, p->depth);
+        break;
+    case 3:
+        generateAndAddMineshaftPiece(env, minX + 1, minY, minZ - 1, 0, p->depth);
+        generateAndAddMineshaftPiece(env, minX + 1, minY, maxZ + 1, 2, p->depth);
+        generateAndAddMineshaftPiece(env, minX - 1, minY, minZ + 1, 3, p->depth);
+        break;
+    case 1:
+        generateAndAddMineshaftPiece(env, minX + 1, minY, minZ - 1, 0, p->depth);
+        generateAndAddMineshaftPiece(env, minX + 1, minY, maxZ + 1, 2, p->depth);
+        generateAndAddMineshaftPiece(env, maxX + 1, minY, minZ + 1, 1, p->depth);
+        break;
+    default:
+        UNREACHABLE();
+    }
+
+    if (!twoFloored)
+        return;
+
+    if (nextBoolean()) generateAndAddMineshaftPiece(env, minX + 1, minY + 4, minZ - 1, 0, p->depth);
+    if (nextBoolean()) generateAndAddMineshaftPiece(env, minX - 1, minY + 4, minZ + 1, 3, p->depth);
+    if (nextBoolean()) generateAndAddMineshaftPiece(env, maxX + 1, minY + 4, minZ + 1, 1, p->depth);
+    if (nextBoolean()) generateAndAddMineshaftPiece(env, minX + 1, minY + 4, maxZ + 1, 2, p->depth);
+}
+
+static
+void addMineshaftStairsChildren(MineshaftEnv *env, const Piece *p)
+{
+    switch (p->rot)
+    {
+    case 0: generateAndAddMineshaftPiece(env, p->bb0.x, p->bb0.y, p->bb0.z - 1, 0, p->depth); break;
+    case 2: generateAndAddMineshaftPiece(env, p->bb0.x, p->bb0.y, p->bb1.z + 1, 2, p->depth); break;
+    case 3: generateAndAddMineshaftPiece(env, p->bb0.x - 1, p->bb0.y, p->bb0.z, 3, p->depth); break;
+    case 1: generateAndAddMineshaftPiece(env, p->bb1.x + 1, p->bb0.y, p->bb0.z, 1, p->depth); break;
+    default: UNREACHABLE();
+    }
+}
+
+static
+void addMineshaftChildren(MineshaftEnv *env, const Piece *p)
+{
+    switch (p->type)
+    {
+    case MSHFT_ROOM:
+        addMineshaftRoomChildren(env, p);
+        break;
+    case MSHFT_CORRIDOR:
+        addMineshaftCorridorChildren(env, p);
+        break;
+    case MSHFT_CROSSING:
+        addMineshaftCrossingChildren(env, p);
+        break;
+    case MSHFT_STAIRS:
+        addMineshaftStairsChildren(env, p);
+        break;
+    default:
+        UNREACHABLE();
+    }
+}
+
+static
+Piece *createRandomMineshaftPiece(MineshaftEnv *env,
+        int x, int y, int z, int facing, int depth)
+{
+    int pick = nextInt(100);
+    if      (pick >= 80) return findMineshaftCrossing(env, x, y, z, facing, depth);
+    else if (pick >= 70) return findMineshaftStairs  (env, x, y, z, facing, depth);
+    else                 return findMineshaftCorridor(env, x, y, z, facing, depth);
+}
+
+static
+Piece *generateAndAddMineshaftPiece(MineshaftEnv *env,
+        int x, int y, int z, int facing, int genDepth)
+{
+    Piece *p;
+
+    if (genDepth > 8)
+        return NULL;
+    if (env->count >= env->nmax)
+        return NULL;
+    if (IABS(x - env->list[0].bb0.x) > 80 || IABS(z - env->list[0].bb0.z) > 80)
+        return NULL;
+
+    p = createRandomMineshaftPiece(env, x, y, z, facing, genDepth + 1);
+    if (p != NULL)
+        addMineshaftChildren(env, p);
+    return p;
+}
+
+int getMineshaftPieces(Piece *list, int n, int mc, uint64_t seed, int chunkX, int chunkZ, int type)
+{
+    MineshaftEnv env;
+    Piece *start;
+    int yOffset;
+    int boxMinY, boxMaxY, boxHeight;
+    int i;
+
+    if (list == NULL || n <= 0)
+        return 0;
+
+    if (mc >= MC_1_11)
+        setCarverSeed(seed, chunkX, chunkZ);
+    else
+        setSeed(seed ^ chunkZ ^ chunkX);
+    skipNextN(1);
+    if (nextFloat() >= 0.004f)
+        return 0;
+    if (nextInt(80) >= (IABS(chunkX) > IABS(chunkZ) ? IABS(chunkX) : IABS(chunkZ)))
+        return 0;
+
+    memset(&env, 0, sizeof(env));
+    env.list = list;
+    env.nmax = n;
+    env.type = type;
+    memset(list, 0, (size_t) n * sizeof(*list));
+
+    start = addMineshaftRoom(&env, (chunkX << 4) + 2, 50, (chunkZ << 4) + 2);
+    if (start == NULL)
+        return 0;
+
+    addMineshaftChildren(&env, start);
+
+    boxMinY = list[0].bb0.y;
+    boxMaxY = list[0].bb1.y;
+    for (i = 1; i < env.count; i++)
+    {
+        if (list[i].bb0.y < boxMinY) boxMinY = list[i].bb0.y;
+        if (list[i].bb1.y > boxMaxY) boxMaxY = list[i].bb1.y;
+    }
+    boxHeight = boxMaxY - boxMinY + 1;
+
+    // move boxes
+    if (type == MINESHAFT_MESA)
+    {
+        if (mc >= MC_1_18)
+        {
+            yOffset = 0;// TODO
+        }
+        else
+        {
+            yOffset = boxHeight / 2 - boxMaxY + 63 + 5;
+        }
+        offsetPiecesVertically(list, env.count, yOffset);
+    }
+    else
+    {
+        moveBelowSeaLevel(list, env.count, 63, mc >= MC_1_18 ? -64 : 0, 10);
+    }
+
+    return env.count;
 }
 
 //==============================================================================

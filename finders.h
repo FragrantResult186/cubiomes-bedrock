@@ -486,6 +486,26 @@ enum
     PIECE_COUNT,
 };
 
+/* Generate the structure pieces of an abandoned mineshaft. The maximum number
+ * of pieces that are generated is limited to 'n'. The mineshaft type is biome
+ * dependent and should be provided explicitly as MINESHAFT_NORMAL or
+ * MINESHAFT_MESA.
+ */
+int getMineshaftPieces(Piece *list, int n, int mc, uint64_t seed, int chunkX, int chunkZ, int type);
+enum
+{   // Mineshaft types
+    MINESHAFT_NORMAL,
+    MINESHAFT_MESA,
+};
+enum
+{   // Mineshaft piece types
+    MSHFT_ROOM,
+    MSHFT_CORRIDOR,
+    MSHFT_CROSSING,
+    MSHFT_STAIRS,
+    MINESHAFT_PIECES_MAX = 1024,
+};
+
 
 int getEndGatewayPos(uint64_t seed, EndNoise en, SurfaceNoise sn, int chunkX, int chunkZ, Pos *pos);
 
