@@ -5,7 +5,7 @@
 #include "tables/btree20.h"
 #include "tables/btree21wd.h"
 #include "tables/btree262.h"
-#include "tables/btree263.h"z
+#include "tables/btree263.h"
 
 #include <stdlib.h>
 #include <string.h>
