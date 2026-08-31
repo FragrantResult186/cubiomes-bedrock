@@ -1797,16 +1797,19 @@ L_feature:
         sampleZ = chunkZ * 16 + 8;
         if (g->mc >= MC_1_9 && g->mc < MC_1_18)
         {   // check for deep ocean center
-            if (!areBiomesViable(g, sampleX, 63, sampleZ, 16, g_monument_biomes2, 0, approx))
+            if (!areBiomesViable(g, sampleX, 63, sampleZ, 16, g_monument_biomes2, 0, approx))            
                 goto L_not_viable;
         }
         else if (g->mc >= MC_1_18)
-        {   // check is done at y level of ocean floor - approx. with y = 36
-            id = getBiomeAt(g, 4, sampleX>>2, 36>>2, sampleZ>>2);
-            if (!isDeepOcean(id))
+        {
+            // we need to check y = 0, but internally areBiomesViable checks y - rad,
+            // so we use y = 16, so the actual checked y would be y - rad = 0
+            if (!areBiomesViable(g, sampleX, 16, sampleZ, 16, g_monument_biomes2, 0, approx))
                 goto L_not_viable;
         }
-        if (areBiomesViable(g, sampleX, 63, sampleZ, 29, g_monument_biomes1, 0, approx))
+        // we need to check y = 0, but internally areBiomesViable checks y - rad,
+        // so we use y = 29, so the actual checked y would be y - rad = 0
+        if (areBiomesViable(g, sampleX, 29, sampleZ, 29, g_monument_biomes1, 0, approx))
             goto L_viable;
         goto L_not_viable;
 
@@ -1958,8 +1961,10 @@ int isViableStructureTerrain(int structType, Generator *g, int x, int z)
         return 1;
     if (structType == Desert_Pyramid || structType == Jungle_Temple)
     {
-        sx = (structType == Desert_Pyramid ? 21 : 12);
-        sz = (structType == Desert_Pyramid ? 21 : 15);
+        // Commented out: this height check seems to eliminate good results for Bedrock
+        // sx = (structType == Desert_Pyramid ? 21 : 12);
+        // sz = (structType == Desert_Pyramid ? 21 : 15);
+        return 1;
     }
     // else if (structType == Mansion)
     // {
