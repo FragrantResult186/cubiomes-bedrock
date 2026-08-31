@@ -1830,12 +1830,8 @@ L_feature:
             {
                 if (g->mc >= MC_1_21_60)
                     m |= (1ULL << (pale_garden - 128));
-                SurfaceNoise sn;
-                initSurfaceNoise(&sn, DIM_OVERWORLD, g->seed);
-                float height;
-                int biome_id;
-                mapApproxHeight(&height, &biome_id, g, &sn, x >> 2, z >> 2, 1, 1);
-                if (!areBiomesViable(g, sampleX, (int)height>>2, sampleZ, 32, b, m, approx))
+                
+                if (!areBiomesViable(g, sampleX, 319, sampleZ, 32, b, m, approx))
                     goto L_not_viable;
             }
         }
