@@ -8,6 +8,7 @@
 #include "tables/btree262.h"
 #include "tables/btree263.h"
 #include "tables/btree264.h"
+#include "tables/btree266.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -1447,11 +1448,17 @@ int climateToBiome(int mc, const uint64_t np[6], uint64_t *dat)
         btree264_steps, &btree264_param[0][0], btree264_nodes, btree264_order,
         sizeof(btree264_nodes) / sizeof(uint64_t)
     };
+    static const BiomeTree btree266 = {
+        btree266_steps, &btree266_param[0][0], btree266_nodes, btree266_order,
+        sizeof(btree266_nodes) / sizeof(uint64_t)
+    };
 
     const BiomeTree *bt;
     int idx;
 
-    if (mc >= MC_26_40)
+    if (mc >= MC_26_60)
+        bt = &btree266;
+    else if (mc >= MC_26_40)
         bt = &btree264;
     else if (mc >= MC_26_30)
         bt = &btree263;

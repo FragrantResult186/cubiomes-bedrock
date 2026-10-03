@@ -46,7 +46,7 @@ static const int32_t btree264_param[][2] =
 
 static const uint64_t btree264_nodes[] =
 {
-    // Binary encoded biome parameter search tree for 26.3 snap1.
+    // Binary encoded biome parameter search tree for preview 26.40.27.
     //
     //   +-------------- If the top byte equals 0xFF, the node is a leaf and the
     //   |               second byte is the biome id, otherwise the two bytes

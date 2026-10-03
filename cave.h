@@ -52,9 +52,25 @@ double sampleTerrainDensity(
     double factor,
     int x, int y, int z);
 
+enum {
+    CAVE_AIR   = 0,
+    CAVE_STONE = 1,
+    CAVE_WATER = 2,
+    CAVE_LAVA  = 3,
+};
+
+STRUCT(FluidLevel)
+{
+    int y;
+    int state; // CAVE_WATER or CAVE_LAVA (never CAVE_AIR)
+};
+
 /**
  * Cave noise (1.18+ overworld): cave entrance, cheese caves, spaghetti 2D/3D
- * tunnels, pillars, and noodle caves. Aquifers are not modelled here.
+ * tunnels, pillars, noodle caves, and aquifers (barrier/floodedness/spread/
+ * lava noises + the positional random root used to jitter aquifer grid
+ * points). The raw density helpers below still exclude the aquifer pass;
+ * use getCaveBlockStateCached() to get a final air/stone/water/lava state.
  */
 STRUCT(CaveNoise)
 {
@@ -78,7 +94,12 @@ STRUCT(CaveNoise)
     DoublePerlinNoise noodleThickness;
     DoublePerlinNoise noodleRidgeA;
     DoublePerlinNoise noodleRidgeB;
-    PerlinNoise oct[58]; // buffer for octaves
+    DoublePerlinNoise aquiferBarrier;
+    DoublePerlinNoise aquiferFloodedness;
+    DoublePerlinNoise aquiferSpread;
+    DoublePerlinNoise aquiferLava;
+    uint64_t aqLo, aqHi; // "aquifer" keyed positional-random root
+    PerlinNoise oct[66]; // buffer for octaves
 };
 
 STRUCT(TerrainCacheEntry)
@@ -88,10 +109,26 @@ STRUCT(TerrainCacheEntry)
     double val;
 };
 
+STRUCT(SurfaceCacheEntry)
+{
+    int x, z;
+    unsigned char used;
+    int val;
+};
+
+STRUCT(FluidCacheEntry)
+{
+    int x, y, z;
+    unsigned char used;
+    FluidLevel val;
+};
+
 STRUCT(TerrainCache)
 {
     TerrainCacheEntry density[32768];
     TerrainCacheEntry noodle[4][16384];
+    SurfaceCacheEntry surface[1024];
+    FluidCacheEntry   fluid[2048];
 };
 
 /**

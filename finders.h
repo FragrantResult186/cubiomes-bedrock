@@ -51,6 +51,14 @@ enum StructureType
 };
 
 
+enum RNGType
+{
+    BEDROCK_RANDOM   = 0,
+    JAVA_RANDOM      = 1,
+    XOROSHIRO_RANDOM = 2
+};
+
+
 // use getStructureConfig() for the version specific structure configuration
 STRUCT(StructureConfig)
 {
@@ -60,6 +68,7 @@ STRUCT(StructureConfig)
     uint8_t structType;
     int8_t  dim;
     float   rarity;
+    uint8_t rngType;
 };
 
 
@@ -884,11 +893,7 @@ Pos getFeatureChunkInRegion(StructureConfig config, uint64_t seed, int regX, int
     pos.z = nextInt(&seed, 24);
     */
     Pos pos;
-    switch(config.structType)
-    {
-    case Trail_Ruins:
-    case Trial_Chambers:
-    case Abandoned_Camp:
+    if (config.rngType == JAVA_RANDOM)
     {
     const uint64_t K = 0x5deece66dULL;
     const uint64_t M = (1ULL << 48) - 1;
@@ -913,13 +918,11 @@ Pos getFeatureChunkInRegion(StructureConfig config, uint64_t seed, int regX, int
         seed = (seed * K + b) & M;
         pos.z = (int)((r * (seed >> 17)) >> 31);
     }
-    break;
     }
-    default: // other structures
+    else { // other structures
         setRegionSeed(seed, regX, regZ, config.salt);
         pos.x = nextInt(config.chunkRange);
         pos.z = nextInt(config.chunkRange);
-        break;
     }
 
     return pos;
@@ -944,9 +947,7 @@ static inline ATTR(const)
 Pos getLargeStructureChunkInRegion(StructureConfig config, uint64_t seed, int regX, int regZ)
 {
     Pos pos;
-    switch(config.structType)
-    {
-    case Abandoned_Camp:
+    if (config.rngType == JAVA_RANDOM)
     {
     const uint64_t K = 0x5deece66dULL;
     const uint64_t M = (1ULL << 48) - 1;
@@ -970,13 +971,11 @@ Pos getLargeStructureChunkInRegion(StructureConfig config, uint64_t seed, int re
 
     pos.x >>= 1;
     pos.z >>= 1;
-    break;
     }
-    default: // other structures
+    else { // other structures
         setRegionSeed(seed, regX, regZ, config.salt);
         pos.x = (nextInt(config.chunkRange) + nextInt(config.chunkRange)) / 2;
         pos.z = (nextInt(config.chunkRange) + nextInt(config.chunkRange)) / 2;
-        break;
     }
 
     return pos;
@@ -1000,15 +999,14 @@ static inline ATTR(const)
 Pos chunkToRegion(int chunkX, int chunkZ, int regionSize)
 {
     Pos p;
-    p.x = (chunkX < 0 ? chunkX - regionSize + 1 : chunkX) / regionSize;
-    p.z = (chunkZ < 0 ? chunkZ - regionSize + 1 : chunkZ) / regionSize;
+    p.x = chunkX / regionSize - (chunkX < 0 && chunkX % regionSize);
+    p.z = chunkZ / regionSize - (chunkZ < 0 && chunkZ % regionSize);
     return p;
 }
 
 // village 1.0-1.10
 static inline int regionOffset(int coord, int regionSize) {
-    int offset = coord % regionSize;
-    return (offset < 0) ? offset + regionSize : offset;
+    return ((coord % regionSize) + regionSize) % regionSize;
 }
 
 static inline ATTR(const)
@@ -1019,10 +1017,8 @@ int isVillageChunk(StructureConfig config, uint64_t seed, int chunkX, int chunkZ
     int regionX = chunkX < 0 ? chunkX - regionSize + 1 : chunkX;
     int regionZ = chunkZ < 0 ? chunkZ - regionSize + 1 : chunkZ;
     setRegionSeed(seed, regionX, regionZ, config.salt);
-    int vchunkX = nextInt(chunkRange) + chunkX - regionOffset(chunkX, regionSize);
-    if (vchunkX != chunkX) return 0;
-    int vchunkZ = nextInt(chunkRange) + chunkZ - regionOffset(chunkZ, regionSize);
-    if (vchunkZ != chunkZ) return 0;
+    if (nextInt(chunkRange) != regionOffset(chunkX, regionSize)) return 0;
+    if (nextInt(chunkRange) != regionOffset(chunkZ, regionSize)) return 0;
     return 1;
 }
 

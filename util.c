@@ -160,12 +160,14 @@ const char* mc2str(int mc)
     case MC_26_30:   return "26.30"; break;
     case MC_26_40:   return "26.40"; break;
     case MC_26_50:   return "26.50"; break;
+    case MC_26_60:   return "26.60"; break;
     default:         return "?";
     }
 }
 
 int str2mc(const char *s)
 {
+    if (!strcmp(s, "26.60"))    return MC_26_60;
     if (!strcmp(s, "26.50"))    return MC_26_50;
     if (!strcmp(s, "26.40"))    return MC_26_40;
     if (!strcmp(s, "26.30"))    return MC_26_30;
@@ -345,6 +347,8 @@ const char *biome2str(int mc, int id)
     case sulfur_caves: return "sulfur_caves";
     // 26.40.27
     case dappled_forest: return "dappled_forest";
+    // 26.60
+    case ice_caves: return "ice_caves";
     }
     return NULL;
 }
@@ -383,6 +387,48 @@ const char* struct2str(int stype)
     case End_Gateway:       return "end_gateway";
     }
     return NULL;
+}
+
+static const char* g_campsite_prefixes[3] = {
+    // alphabet order
+    "barrel","chest","special"
+};
+
+static const int g_camp_tent_pool_order[10] = {
+    // alphabet order
+    1,10,2,3,4,5,6,7,8,9
+};
+
+static const int g_campsite_pool_order[15] = {
+    // alphabet order
+    1,10,11,12,13,14,15,2,3,4,5,6,7,8,9
+};
+
+const char *getCampTentName(int biomeID, int idx)
+{
+    static char buf[128];
+    const char* key = biome2str(MC_NEWEST, biomeID);
+    snprintf(buf, sizeof(buf), "tent_%s_%d", key, g_camp_tent_pool_order[idx]);
+    return buf;
+}
+
+const char *getCampsiteName(int biomeID, int idx, int biomeCampCount)
+{
+    static char buf[128];
+    if (idx < biomeCampCount)
+    {   // biome-specific
+        const char* key = biome2str(MC_NEWEST, biomeID);
+        snprintf(buf, sizeof(buf), "campsite_%s_%d", key, idx + 1);
+        return buf;
+    }
+    else
+    {   // barrel, chest, special
+        int cat = (idx - biomeCampCount) / 15;
+        int pos = (idx - biomeCampCount) % 15;
+        int num = g_campsite_pool_order[pos];
+        snprintf(buf, sizeof(buf), "campsite_default_%s_%d", g_campsite_prefixes[cat], num);
+        return buf;
+    }
 }
 
 static void setColor(unsigned char colors[256][3], int id, uint32_t hex)
@@ -495,6 +541,7 @@ void initBiomeColors(unsigned char colors[256][3])
     setColor(colors, pale_garden,                      0x696d95); // -
     setColor(colors, sulfur_caves,                     0xc8d232); // -
     setColor(colors, dappled_forest,                   0x9a3f35); // -
+    setColor(colors, ice_caves,                        0x8cd1ff); // -
 }
 
 void initBiomeTypeColors(unsigned char colors[256][3])

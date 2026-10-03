@@ -166,6 +166,12 @@ const char *biome2str(int mc, int id);
 /// get the resource id name for a structure
 const char *struct2str(int stype);
 
+/// get the resource pool key name for a camp tent structure piece
+const char *getCampTentName(int biomeID, int idx);
+
+/// get the resource pool key name for a campsite structure piece
+const char *getCampsiteName(int biomeID, int idx, int biomeCampCount);
+
 /// initialize a biome colormap with some defaults
 void initBiomeColors(unsigned char biomeColors[256][3]);
 void initBiomeTypeColors(unsigned char biomeColors[256][3]);

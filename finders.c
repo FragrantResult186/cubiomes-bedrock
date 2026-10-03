@@ -21,47 +21,48 @@
 int getStructureConfig(int structureType, int mc, StructureConfig *sconf)
 {
     static const StructureConfig
-    s_feature               = { 14357617, 32, 24, Feature,          DIM_OVERWORLD, 0},
-    s_desert_pyramid        = { 14357617, 32, 24, Desert_Pyramid,   DIM_OVERWORLD, 0},
-    s_igloo                 = { 14357617, 32, 24, Igloo,            DIM_OVERWORLD, 0},
-    s_jungle_temple         = { 14357617, 32, 24, Jungle_Pyramid,   DIM_OVERWORLD, 0},
-    s_swamp_hut             = { 14357617, 32, 24, Swamp_Hut,        DIM_OVERWORLD, 0},
-    s_outpost               = {165745296, 80, 56, Outpost,          DIM_OVERWORLD, 0},
-    s_village_110           = { 10387312,  1,  1, Village,          DIM_OVERWORLD, 50},// potentially generated chunk-by-chunk
-    s_village_117           = { 10387312, 27, 17, Village,          DIM_OVERWORLD, 0.2 },// abandoned
-    s_village_1730          = { 10387312, 27, 17, Village,          DIM_OVERWORLD, 0.02},// abandoned
-    s_village               = { 10387312, 34, 26, Village,          DIM_OVERWORLD, 0.02},// abandoned
-    s_stronghold            = { 97858791,200,150, Stronghold,       DIM_OVERWORLD, 0.25},
-    s_ocean_ruin_117        = { 14357621, 12,  5, Ocean_Ruin,       DIM_OVERWORLD, 0},
-    s_ocean_ruin            = { 14357621, 20, 12, Ocean_Ruin,       DIM_OVERWORLD, 0},
-    s_shipwreck_117         = {165745295, 10,  5, Shipwreck,        DIM_OVERWORLD, 0},
-    s_shipwreck             = {165745295, 24, 20, Shipwreck,        DIM_OVERWORLD, 0},
-    s_monument              = { 10387313, 32, 27, Monument,         DIM_OVERWORLD, 0},
-    s_mansion               = { 10387319, 80, 60, Mansion,          DIM_OVERWORLD, 0},
-    s_ruined_portal         = { 40552231, 40, 25, Ruined_Portal,    DIM_OVERWORLD, 0},
-    s_ancient_city          = { 20083232, 24, 16, Ancient_City,     DIM_OVERWORLD, 0},
-    s_trail_ruins           = { 83469867, 34, 26, Trail_Ruins,      DIM_OVERWORLD, 0},
-    s_trial_chambers        = { 94251327, 34, 22, Trial_Chambers,   DIM_OVERWORLD, 0},
-    s_abandoned_camp_264    = { 91231127, 34, 26, Abandoned_Camp,   DIM_OVERWORLD, 0},
-    s_abandoned_camp        = { 91231127, 37, 29, Abandoned_Camp,   DIM_OVERWORLD, 0},
-    s_treasure              = { 16842397,  4,  2, Treasure,         DIM_OVERWORLD, 0},
-    s_mineshaft             = {        0,  1,  1, Mineshaft,        DIM_OVERWORLD, 0},
+    s_feature               = { 14357617, 32, 24, Feature,          DIM_OVERWORLD, 0,      BEDROCK_RANDOM},
+    s_desert_pyramid        = { 14357617, 32, 24, Desert_Pyramid,   DIM_OVERWORLD, 0,      BEDROCK_RANDOM},
+    s_igloo                 = { 14357617, 32, 24, Igloo,            DIM_OVERWORLD, 0,      BEDROCK_RANDOM},
+    s_jungle_temple         = { 14357617, 32, 24, Jungle_Pyramid,   DIM_OVERWORLD, 0,      BEDROCK_RANDOM},
+    s_swamp_hut             = { 14357617, 32, 24, Swamp_Hut,        DIM_OVERWORLD, 0,      BEDROCK_RANDOM},
+    s_outpost               = {165745296, 80, 56, Outpost,          DIM_OVERWORLD, 0,      BEDROCK_RANDOM},
+    s_village_110           = { 10387312,  1,  1, Village,          DIM_OVERWORLD, 50,     BEDROCK_RANDOM},
+    s_village_117           = { 10387312, 27, 17, Village,          DIM_OVERWORLD, 0.2,    BEDROCK_RANDOM},
+    s_village_1730          = { 10387312, 27, 17, Village,          DIM_OVERWORLD, 0.02,   BEDROCK_RANDOM},
+    s_village               = { 10387312, 34, 26, Village,          DIM_OVERWORLD, 0.02,   BEDROCK_RANDOM},
+    s_stronghold            = { 97858791,200,150, Stronghold,       DIM_OVERWORLD, 0.25,   BEDROCK_RANDOM},
+    s_ocean_ruin_117        = { 14357621, 12,  5, Ocean_Ruin,       DIM_OVERWORLD, 0,      BEDROCK_RANDOM},
+    s_ocean_ruin            = { 14357621, 20, 12, Ocean_Ruin,       DIM_OVERWORLD, 0,      BEDROCK_RANDOM},
+    s_shipwreck_117         = {165745295, 10,  5, Shipwreck,        DIM_OVERWORLD, 0,      BEDROCK_RANDOM},
+    s_shipwreck             = {165745295, 24, 20, Shipwreck,        DIM_OVERWORLD, 0,      BEDROCK_RANDOM},
+    s_monument              = { 10387313, 32, 27, Monument,         DIM_OVERWORLD, 0,      BEDROCK_RANDOM},
+    s_mansion               = { 10387319, 80, 60, Mansion,          DIM_OVERWORLD, 0,      BEDROCK_RANDOM},
+    s_ruined_portal         = { 40552231, 40, 25, Ruined_Portal,    DIM_OVERWORLD, 0,      BEDROCK_RANDOM},
+    s_ancient_city          = { 20083232, 24, 16, Ancient_City,     DIM_OVERWORLD, 0,      BEDROCK_RANDOM},
+    s_trail_ruins           = { 83469867, 34, 26, Trail_Ruins,      DIM_OVERWORLD, 0,         JAVA_RANDOM},
+    s_trial_chambers        = { 94251327, 34, 22, Trial_Chambers,   DIM_OVERWORLD, 0,         JAVA_RANDOM},
+    s_abandoned_camp_264    = { 91231127, 34, 26, Abandoned_Camp,   DIM_OVERWORLD, 0,      BEDROCK_RANDOM},
+    s_abandoned_camp        = { 91231127, 37, 29, Abandoned_Camp,   DIM_OVERWORLD, 0,         JAVA_RANDOM},
+    s_treasure              = { 16842397,  4,  2, Treasure,         DIM_OVERWORLD, 0,      BEDROCK_RANDOM},
+    s_mineshaft             = {        0,  1,  1, Mineshaft,        DIM_OVERWORLD, 0,      BEDROCK_RANDOM},
     // nether structures
-    s_ruined_portal_n       = { 40552231, 25, 15, Ruined_Portal_N,  DIM_NETHER, 0},
-    s_fortress_114          = {        0, 16,  8, Fortress,         DIM_NETHER, 0},
-    s_fortress              = { 30084232, 30, 26, Fortress,         DIM_NETHER, 0},
-    s_bastion               = { 30084232, 30, 26, Bastion,          DIM_NETHER, 0},
+    s_ruined_portal_n       = { 40552231, 25, 15, Ruined_Portal_N,  DIM_NETHER, 0,         BEDROCK_RANDOM},
+    s_fortress_114          = {        0, 16,  8, Fortress,         DIM_NETHER, 0,         BEDROCK_RANDOM},
+    s_fortress              = { 30084232, 30, 26, Fortress,         DIM_NETHER, 0,         BEDROCK_RANDOM},
+    s_bastion               = { 30084232, 30, 26, Bastion,          DIM_NETHER, 0,         BEDROCK_RANDOM},
     // end structures
-    s_end_city              = { 10387313, 20,  9, End_City,         DIM_END, 0},
-    s_end_gateway           = {        0,  1,  1, End_Gateway,      DIM_END, 700},
+    s_end_city              = { 10387313, 20,  9, End_City,         DIM_END,   0,          BEDROCK_RANDOM},
+    s_end_gateway           = {        0,  1,  1, End_Gateway,      DIM_END, 700,          BEDROCK_RANDOM},
     // decorators
-    s_desert_well           = {-1160484816,  1,  1, Desert_Well,    DIM_OVERWORLD, 500},
-    s_geode_117             = { 1974035328,  1,  1, Geode,          DIM_OVERWORLD, 53},
-    s_geode                 = { 1974035328,  1,  1, Geode,          DIM_OVERWORLD, 24},
-    s_dungeon               = {          0,  1,  1, Dungeon,        DIM_OVERWORLD, 0},
-    s_end_island            = {          0,  1,  1, End_Island,     DIM_END,       14},
-    s_ravine                = {          0,  1,  1, Ravine,         DIM_OVERWORLD, 0},
-    s_lavalake              = {          0,  1,  1, Lava_Lake,      DIM_OVERWORLD, 8}
+    s_desert_well           = {-1160484816,  1,  1, Desert_Well,    DIM_OVERWORLD, 500,    BEDROCK_RANDOM},
+    s_geode_117             = { 1974035328,  1,  1, Geode,          DIM_OVERWORLD,  53,    BEDROCK_RANDOM},
+    s_geode                 = { 1974035328,  1,  1, Geode,          DIM_OVERWORLD,  24,    BEDROCK_RANDOM},
+    s_dungeon               = {          0,  1,  1, Dungeon,        DIM_OVERWORLD,   0,    BEDROCK_RANDOM},
+    s_end_island            = {          0,  1,  1, End_Island,     DIM_END,        14,    BEDROCK_RANDOM},
+    s_ravine_215            = {          0,  1,  1, Ravine,         DIM_OVERWORLD, 150,    BEDROCK_RANDOM},
+    s_ravine                = {          0,  1,  1, Ravine,         DIM_OVERWORLD, 100,    BEDROCK_RANDOM},
+    s_lavalake              = {          0,  1,  1, Lava_Lake,      DIM_OVERWORLD,   8,    BEDROCK_RANDOM}
     ;
 
     switch (structureType)
@@ -128,7 +129,7 @@ int getStructureConfig(int structureType, int mc, StructureConfig *sconf)
         *sconf = s_mineshaft;
         return mc >= MC_UNDEF;// 0.9.0
     case Ravine:
-        *sconf = s_ravine;
+        *sconf = mc < MC_1_21_60 ? s_ravine_215 : s_ravine;
         return mc >= MC_1_2;
     case Fortress:
         *sconf = mc <= MC_1_14 ? s_fortress_114 : s_fortress;
@@ -288,8 +289,8 @@ int getStructurePos(int structureType, int mc, uint64_t seed, int regX, int regZ
         pos->z = regZ << 4;
         setDecorationSeed(seed, regX, regZ, sconf.salt);
         if (nextInt(sconf.rarity) != 0) return 0;
-        pos->x += nextInt(16);
         pos->z += nextInt(16);
+        pos->x += nextInt(16);
         return 1;
     }
 
@@ -430,7 +431,7 @@ int getLavaLakes(int mc, uint64_t seed, int cx0, int cz0, int cx1, int cz1,
                   Pos *out, int nout, int isDesert)
 {
     int i, j;
-    int x, y, z, n = 0;;
+    int x, y, z, n = 0;
 
     for (i = cx0; i <= cx1; i++)
     {
@@ -1316,8 +1317,20 @@ int isViableFeatureBiome(int mc, int structureType, int biomeID)
         return isDeepOcean(biomeID);
 
     case Outpost:
-        if (mc <= MC_1_11) return 0;
-        if (mc >= MC_1_18) {
+        if (mc <= MC_1_10) return 0;
+        if (mc < MC_1_18) {
+            switch (biomeID) {
+            case desert:
+            case plains:
+            case savanna:
+            case snowy_plains:
+            case taiga:
+            case taiga_hills:
+            case snowy_taiga_hills:
+            case sunflower_plains:
+                return 1;
+            }
+        } else {
             switch (biomeID) {
             case desert:
             case plains:
@@ -1334,11 +1347,9 @@ int isViableFeatureBiome(int mc, int structureType, int biomeID)
             case grove:
             case cherry_grove:
                 return 1;
-            default:
-                return 0;
             }
         }
-        return biomeID == desert || biomeID == plains || biomeID == savanna || biomeID == taiga;
+        return 0;
 
     case Village:
         if (biomeID == plains || biomeID == desert || biomeID == savanna || biomeID == snowy_plains)
@@ -1710,7 +1721,7 @@ L_feature:
     {
         if (g->mc < MC_1_18)
         {
-            if (g->mc == MC_1_14)
+            if (g->mc < MC_1_11)
             {
                 g->entry = &g->ls.layers[L_VORONOI_1];
                 sampleX = chunkX * 16 + 9;
@@ -1723,8 +1734,13 @@ L_feature:
                 sampleZ = chunkZ * 4 + 2;
             }
             id = getBiomeAt(g, 0, sampleX, 0, sampleZ);
-            if (id < 0 || !isViableFeatureBiome(g->mc, structureType, id))
-                goto L_not_viable;
+            if (g->mc < MC_1_11) {
+                if (id < 0 || !isViableFeatureBiome(g->mc, structureType, id))
+                    goto L_not_viable;
+            } else {
+                if (!areBiomesViable(g, x, 0, z, 2, g_village_biomes, 0, 0))
+                    goto L_not_viable;
+            }
             if (flags && (uint32_t) id != flags)
                 goto L_not_viable;
             if (g->mc < MC_1_0)
@@ -1751,7 +1767,7 @@ L_feature:
 
     case Outpost:
     {
-        if (g->mc <= MC_1_13)
+        if (g->mc <= MC_1_10)
             goto L_not_viable;
         if (g->mc >= MC_1_18)
         {
@@ -1779,34 +1795,10 @@ L_feature:
     case Monument:
         if (g->mc < MC_1_0)
             goto L_not_viable;
-        else if (g->mc == MC_1_8)
-        {   // In 1.8 monuments require only a single deep ocean block.
-            id = getBiomeAt(g, 1, chunkX * 16 + 8, 0, chunkZ * 16 + 8);
-            if (id < 0 || !isDeepOcean(id))
-                goto L_not_viable;
-        }
-        else if (g->mc < MC_1_18)
-        {   // Monuments require two viability checks with the ocean layer
-            // branch => worth checking for potential deep ocean beforehand.
-            g->entry = &g->ls.layers[L_SHORE_16];
-            id = getBiomeAt(g, 0, chunkX, 0, chunkZ);
-            if (id < 0 || !isDeepOcean(id))
-                goto L_not_viable;
-        }
         sampleX = chunkX * 16 + 8;
         sampleZ = chunkZ * 16 + 8;
-        if (g->mc >= MC_1_9 && g->mc < MC_1_18)
-        {   // check for deep ocean center
-            if (!areBiomesViable(g, sampleX, 63, sampleZ, 16, g_monument_biomes2, 0, approx))
-                goto L_not_viable;
-        }
-        else if (g->mc >= MC_1_18)
-        {   // check is done at y level of ocean floor - approx. with y = 36
-            id = getBiomeAt(g, 4, sampleX>>2, 36>>2, sampleZ>>2);
-            if (!isDeepOcean(id))
-                goto L_not_viable;
-        }
-        if (areBiomesViable(g, sampleX, 63, sampleZ, 29, g_monument_biomes1, 0, approx))
+        if (areBiomesViable(g, sampleX, 63, sampleZ, 16, g_monument_biomes2, 0, approx) &&
+            areBiomesViable(g, sampleX, 63, sampleZ, 29, g_monument_biomes1, 0, approx))
             goto L_viable;
         goto L_not_viable;
 
@@ -1835,7 +1827,7 @@ L_feature:
                 float height;
                 int biome_id;
                 mapApproxHeight(&height, &biome_id, g, &sn, x >> 2, z >> 2, 1, 1);
-                if (!areBiomesViable(g, sampleX, (int)height>>2, sampleZ, 32, b, m, approx))
+                if (!areBiomesViable(g, sampleX, (int)height+23/*mansion height*/, sampleZ, 32, b, m, approx))
                     goto L_not_viable;
             }
         }
@@ -1911,7 +1903,7 @@ L_jigsaw:
                SurfaceNoise sn;
                initSurfaceNoise(&sn, DIM_OVERWORLD, g->seed);
                setPopulationSeed(g->seed, chunkX, chunkZ);
-               if (g->mc < MC_1_18 && (id != desert || id != desert_hills))
+               if (g->mc < MC_1_18 && (id != desert && id != desert_hills))
                {
                    //water lakes
                    if (nextInt(4) == 0)
@@ -2220,7 +2212,8 @@ int getVariant(StructureVariant *r, int structType, int mc, uint64_t seed,
         setRegionSeed(seed, rpos.x, rpos.z, sc.salt);
         skipNextN(4);
         r->rotation = nextInt(4);
-        r->abandoned = nextFloat() < sc.rarity;
+        if (mc >= MC_1_13)
+            r->abandoned = nextFloat() < sc.rarity;
         switch (biomeID)
         {
         case meadow:
@@ -2241,7 +2234,6 @@ int getVariant(StructureVariant *r, int structType, int mc, uint64_t seed,
             else if (t < 6) { r->start = 2; sx = 12; sy = 6; sz = 12; } // desert_meeting_point_2
             else if (t < 7) { r->start = 3; sx = 15; sy = 6; sz = 15; } // desert_meeting_point_3
             else  UNREACHABLE();
-            break;
             break;
         case savanna:
             t = nextInt(2+1+3+3);
@@ -2543,7 +2535,7 @@ int getVariant(StructureVariant *r, int structType, int mc, uint64_t seed,
 
     case Ravine:
         setPopulationSeed(seed, cx, cz);
-        if (nextInt(mc >= MC_1_21_60 ? 100 : 150) != 0) // rarity chance
+        if (nextInt(sc.rarity) != 0) // rarity chance
             return 0;
         r->x = nextInt(16) + cx * 16;
         if (mc >= MC_1_21_60)
@@ -2568,7 +2560,7 @@ int getVariant(StructureVariant *r, int structType, int mc, uint64_t seed,
 
     case Lava_Lake:
         setPopulationSeed(seed, cx, cz);
-        if (mc < MC_1_18 && (biomeID != desert || biomeID != desert_hills))
+        if (mc < MC_1_18 && (biomeID != desert && biomeID != desert_hills))
         {
             //water lakes
             if (nextInt(4) == 0)
@@ -4407,11 +4399,7 @@ static int dungeonCachedSolid(const BiomeNoise *bn, const TerrainNoise *tn,
     if (sparseFind(ws, wscap, key, &val))
         return val == SOLID;
 
-    int solid;
-    if (y <= -55)
-        solid = 1; // replace lava
-    else
-        solid = isSolidCached(bn, tn, ts, cn, tc, x, y, z);
+    int solid = isSolidCached(bn, tn, ts, cn, tc, x, y, z);
 
     val = solid ? SOLID : AIR;
     sparseSet(ws, wscap, key, val);
@@ -4569,7 +4557,7 @@ static int mineshaftNearby(int mc, uint64_t seed, int chunkX, int chunkZ)
     const int z0 = chunkZ * 16;
     const int x1 = x0 + 15;
     const int z1 = z0 + 15;
-    const int radius = 7;
+    const int radius = 5;
     Piece pieces[512];
 
     for (int cz = chunkZ - radius; cz <= chunkZ + radius; cz++)
@@ -7999,6 +7987,10 @@ static const int g_biome_para_range_264_diff[][13] = {
 {dappled_forest          , -4500,-1500,-10000,-3500,   300, 3000, -2225,  500,  IMIN, IMAX,  5666, 7666},
 {-1,0,0,0,0,0,0,0,0,0,0,0,0}};
 
+static const int g_biome_para_range_266_diff[][13] = {
+{ice_caves              ,   IMIN,-8000,  IMIN, 5000,  IMIN,-1900,  IMIN, IMAX,  2000, 9000,  5000, IMAX},
+{-1,0,0,0,0,0,0,0,0,0,0,0,0}};
+
 /**
  * Gets the min/max parameter values within which a biome change can occur.
  */
@@ -8036,6 +8028,14 @@ const int *getBiomeParaLimits(int mc, int id)
     if (mc < MC_1_18)
         return NULL;
     int i;
+    if (mc > MC_26_40)
+    {
+        for (i = 0; g_biome_para_range_266_diff[i][0] != -1; i++)
+        {
+            if (g_biome_para_range_266_diff[i][0] == id)
+                return &g_biome_para_range_266_diff[i][1];
+        }
+    }
     if (mc > MC_26_30)
     {
         for (i = 0; g_biome_para_range_264_diff[i][0] != -1; i++)

@@ -314,8 +314,19 @@ void initCaveNoise(CaveNoise *cn, uint64_t seed)
     op += xDoublePerlinInit(&cn->noodleRidgeA,      &kxr, op, AMP_ONE, -7, 1, 0);
     seedKey(&kxr, xlo, xhi, 0xeb232b4b89fdde91ULL, 0x031ee565ead84e5cULL);              // noodle_ridge_b
     op += xDoublePerlinInit(&cn->noodleRidgeB,      &kxr, op, AMP_ONE, -7, 1, 0);
+    seedKey(&kxr, xlo, xhi, 0xe170fda6c51d093fULL, 0x134f3e4bc3f40b0cULL);              // aquifer_barrier
+    op += xDoublePerlinInit(&cn->aquiferBarrier,     &kxr, op, AMP_ONE, -3, 1, 0);
+    seedKey(&kxr, xlo, xhi, 0x1b5d4f85fdc2d89eULL, 0x22c7e3e611bf67c6ULL);              // aquifer_fluid_level_floodedness
+    op += xDoublePerlinInit(&cn->aquiferFloodedness, &kxr, op, AMP_ONE, -7, 1, 0);
+    seedKey(&kxr, xlo, xhi, 0x08f136f47cd9aaa2ULL, 0x3666182f5fa0ac6fULL);              // aquifer_fluid_level_spread
+    op += xDoublePerlinInit(&cn->aquiferSpread,      &kxr, op, AMP_ONE, -5, 1, 0);
+    seedKey(&kxr, xlo, xhi, 0x0e5121277ab51b72ULL, 0x2724d8c56aa005baULL);              // aquifer_lava
+    op += xDoublePerlinInit(&cn->aquiferLava,        &kxr, op, AMP_ONE, -1, 1, 0);
+    seedKey(&kxr, xlo, xhi, 0x7bb15cc403c6ace6ULL, 0x0bdd56bc9d232691ULL);              // aquifer (positional random root)
+    cn->aqLo = xNextLong(&kxr);
+    cn->aqHi = xNextLong(&kxr);
 
-    // op - cn->oct must be <= 50 (sizeof(cn->oct)/sizeof(PerlinNoise))
+    // op - cn->oct must be <= 66 (sizeof(cn->oct)/sizeof(PerlinNoise))
 }
 
 static double sampleCaveEntranceNoise(const CaveNoise *cn, int x, int y, int z)
@@ -632,4 +643,350 @@ double sampleTerrainDensityCaves(
     if (result >  64.0) result =  64.0;
     if (result < -64.0) result = -64.0;
     return result;
+}
+
+//==============================================================================
+// Aquifer (1.18+ overworld fluid placement)
+//==============================================================================
+
+#define AQUIFER_SEA_LEVEL   63
+#define AQUIFER_LAVA_LEVEL  (-54)
+
+static int defaultFluidBlockState(int y)
+{
+    int threshold = AQUIFER_SEA_LEVEL < AQUIFER_LAVA_LEVEL ? AQUIFER_SEA_LEVEL : AQUIFER_LAVA_LEVEL;
+    if (y < threshold)
+        return CAVE_LAVA;
+    return (y < AQUIFER_SEA_LEVEL) ? CAVE_WATER : CAVE_AIR;
+}
+
+static FluidLevel defaultFluidLevel(int y)
+{
+    int threshold = AQUIFER_SEA_LEVEL < AQUIFER_LAVA_LEVEL ? AQUIFER_SEA_LEVEL : AQUIFER_LAVA_LEVEL;
+    FluidLevel lava  = { AQUIFER_LAVA_LEVEL, CAVE_LAVA };
+    FluidLevel water = { AQUIFER_SEA_LEVEL,  CAVE_WATER };
+    return (y < threshold) ? lava : water;
+}
+
+static int fluidLevelAt(FluidLevel f, int y)
+{
+    return (y < f.y) ? f.state : CAVE_AIR;
+}
+
+static double getLerpProgress(double v, double lo, double hi)
+{
+    return (v - lo) / (hi - lo);
+}
+
+static double lerpFromProgress(double v, double lo, double hi, double a, double b)
+{
+    return lerp(getLerpProgress(v, lo, hi), a, b);
+}
+
+static double clampedLerpFromProgress(double v, double lo, double hi, double a, double b)
+{
+    return clampedLerp(getLerpProgress(v, lo, hi), a, b);
+}
+
+static double maxDistance(int d1, int d2)
+{
+    return 1.0 - (double) IABS(d2 - d1) / 25.0;
+}
+
+static int getSurfaceHeightNoCaves(const BiomeNoise *bn, const TerrainShaper *ts, int x, int z)
+{
+    double offset, factor;
+    sampleTerrainShape(bn, ts, floordiv(x, 4), floordiv(z, 4), &offset, &factor);
+
+    int k;
+    for (k = 40; k >= -8; k--)
+    {
+        int blockY = k * 8;
+        double g = (1.0 - (double) blockY / 128.0) + offset;
+        double e = g * factor;
+        e *= (e > 0.0) ? 4.0 : 1.0;
+        double result = e - 0.703125;
+
+        if (result >  64.0) result =  64.0;
+        if (result < -64.0) result = -64.0;
+
+        int yc = floordiv(blockY, 8) + 8;
+        result = clampedLerp(((double)(48 - yc) - 8.0) / 2.0, -0.0781250, result);
+        result = clampedLerp((double) yc / 3.0,                0.1171875, result);
+
+        if (result >  64.0) result =  64.0;
+        if (result < -64.0) result = -64.0;
+
+        if (result > 0.390625)
+            return blockY;
+    }
+    return INT32_MAX;
+}
+
+static int getSurfaceHeightCached(const BiomeNoise *bn, const TerrainShaper *ts,
+        TerrainCache *tc, int x, int z)
+{
+    if (!tc)
+        return getSurfaceHeightNoCaves(bn, ts, x, z);
+
+    int bx = floordiv(x, 4), bz = floordiv(z, 4);
+    uint32_t h = (uint32_t) bx * 0x9e3779b1u;
+    h ^= (uint32_t) bz * 0x85ebca6bu;
+    h ^= h >> 16;
+    SurfaceCacheEntry *e = &tc->surface[h & 1023];
+    if (e->used && e->x == bx && e->z == bz)
+        return e->val;
+    e->used = 1;
+    e->x = bx, e->z = bz;
+    e->val = getSurfaceHeightNoCaves(bn, ts, x, z);
+    return e->val;
+}
+
+static int64_t aquiferHashCode(int i, int j, int k)
+{
+    int32_t im = (int32_t)(i * 3129871); // 32bit wraparound
+    int64_t l = (int64_t) im ^ (int64_t) k * 116129781LL ^ (int64_t) j;
+    l = l * l * 42317861LL + l * 11LL;
+    return l >> 16;
+}
+
+static void getGridBlockPos(const CaveNoise *cn, int lx, int ly, int lz,
+        int *ax, int *ay, int *az)
+{
+    int64_t h = aquiferHashCode(lx, ly, lz);
+    Xoroshiro r;
+    r.lo = (uint64_t)((int64_t) h ^ (int64_t) cn->aqLo);
+    r.hi = cn->aqHi;
+    *ax = lx * 16 + xNextInt(&r, 10);
+    *ay = ly * 12 + xNextInt(&r, 9);
+    *az = lz * 16 + xNextInt(&r, 10);
+}
+
+static int determineFluidType(const CaveNoise *cn, int x, int y, int z,
+        int baseState, int targetY)
+{
+    if (targetY <= -10)
+    {
+        int cx = floordiv(x, 64), cy = floordiv(y, 40), cz = floordiv(z, 64);
+        double lava = sampleDoublePerlin(&cn->aquiferLava, cx, cy, cz);
+        if (fabs(lava) > 0.3)
+            return CAVE_LAVA;
+    }
+    return baseState;
+}
+
+static FluidLevel getAquiferFluidLevel(const BiomeNoise *bn, const TerrainShaper *ts,
+        const CaveNoise *cn, TerrainCache *tc, int x, int y, int z)
+{
+    static const int NEIGHBOUR_OFFSETS[13][2] = {
+        {-2,-1},{-1,-1},{ 0,-1},{ 1,-1},{-3, 0},
+        {-2, 0},{-1, 0},{ 0, 0},{ 1, 0},
+        {-2, 1},{-1, 1},{ 0, 1},{ 1, 1}
+    };
+
+    FluidLevel base = defaultFluidLevel(y);
+    int lowestSurface = INT32_MAX;
+    int yPlus12 = y + 12, yMinus12 = y - 12;
+    int foundCenter = 0;
+    int i;
+
+    for (i = 0; i < 13; i++)
+    {
+        int nx = x + NEIGHBOUR_OFFSETS[i][0] * 16;
+        int nz = z + NEIGHBOUR_OFFSETS[i][1] * 16;
+        int surfaceY = getSurfaceHeightCached(bn, ts, tc, nx, nz);
+        int checkY = surfaceY + 8;
+        int isCenter = (NEIGHBOUR_OFFSETS[i][0] == 0 && NEIGHBOUR_OFFSETS[i][1] == 0);
+
+        if (isCenter && yMinus12 > checkY)
+            return base;
+
+        int aboveSurface = (yPlus12 > checkY);
+        if (aboveSurface || isCenter)
+        {
+            FluidLevel nb = defaultFluidLevel(checkY);
+            if (fluidLevelAt(nb, checkY) != CAVE_AIR)
+            {
+                if (isCenter) foundCenter = 1;
+                if (aboveSurface) return nb;
+            }
+        }
+        if (surfaceY < lowestSurface)
+            lowestSurface = surfaceY;
+    }
+
+    int surfaceOffset = lowestSurface + 8 - y;
+    double d = foundCenter ? clampedLerpFromProgress(surfaceOffset, 0.0, 64.0, 1.0, 0.0) : 0.0;
+
+    double floodedness = sampleDoublePerlin(&cn->aquiferFloodedness, x, y * 0.67, z);
+    if (floodedness < -1.0) floodedness = -1.0;
+    if (floodedness >  1.0) floodedness =  1.0;
+
+    double threshold1 = lerpFromProgress(d, 1.0, 0.0, -0.3, 0.8);
+    if (floodedness > threshold1)
+        return base;
+
+    double threshold2 = lerpFromProgress(d, 1.0, 0.0, -0.8, 0.4);
+    if (floodedness <= threshold2)
+        return (FluidLevel){ -32512, base.state };
+
+    int gx = floordiv(x, 16), gy = floordiv(y, 40), gz = floordiv(z, 16);
+    int centerY = gy * 40 + 20;
+    double spread = sampleDoublePerlin(&cn->aquiferSpread, gx, gy / 1.4, gz) * 10.0;
+    int spreadRounded = (int) floor(spread / 3.0) * 3;
+    int targetY = centerY + spreadRounded;
+    int finalY = (lowestSurface < targetY) ? lowestSurface : targetY;
+    int fluidState = determineFluidType(cn, x, y, z, base.state, targetY);
+    return (FluidLevel){ finalY, fluidState };
+}
+
+static FluidLevel getGridFluidLevelCached(const BiomeNoise *bn, const TerrainShaper *ts,
+        const CaveNoise *cn, TerrainCache *tc, int gx, int gy, int gz)
+{
+    int ax, ay, az;
+    if (!tc)
+    {
+        getGridBlockPos(cn, gx, gy, gz, &ax, &ay, &az);
+        return getAquiferFluidLevel(bn, ts, cn, tc, ax, ay, az);
+    }
+
+    uint32_t h = terrainCacheHash(gx, gy, gz);
+    FluidCacheEntry *e = &tc->fluid[h & 2047];
+    if (e->used && e->x == gx && e->y == gy && e->z == gz)
+        return e->val;
+
+    getGridBlockPos(cn, gx, gy, gz, &ax, &ay, &az);
+    FluidLevel fl = getAquiferFluidLevel(bn, ts, cn, tc, ax, ay, az);
+    e->used = 1;
+    e->x = gx, e->y = gy, e->z = gz;
+    e->val = fl;
+    return fl;
+}
+
+static double calculateBarrierDensity(const CaveNoise *cn, int x, int y, int z,
+        double *barrierCache, FluidLevel f1, FluidLevel f2)
+{
+    int s1 = fluidLevelAt(f1, y);
+    int s2 = fluidLevelAt(f2, y);
+    if ((s1 == CAVE_LAVA && s2 == CAVE_WATER) || (s1 == CAVE_WATER && s2 == CAVE_LAVA))
+        return 1.0;
+
+    int dy = IABS(f1.y - f2.y);
+    if (dy == 0)
+        return 0.0;
+
+    double mid = 0.5 * (f1.y + f2.y);
+    double relY = y + 0.5 - mid;
+    double q = dy * 0.5 - fabs(relY);
+    double s;
+
+    if (relY > 0.0) { double r = q;       s = (r > 0.0) ? r / 1.5  : r / 2.5;  }
+    else            { double r = 3.0 + q; s = (r > 0.0) ? r / 3.0  : r / 10.0; }
+
+    if (s < -2.0 || s > 2.0)
+        return s;
+
+    if (*barrierCache != *barrierCache) // NaN check
+        *barrierCache = sampleDoublePerlin(&cn->aquiferBarrier, x, y * 0.5, z);
+    return *barrierCache + s;
+}
+
+static int applyAquiferState(const BiomeNoise *bn, const TerrainShaper *ts,
+        const CaveNoise *cn, TerrainCache *tc, int x, int y, int z, double extra)
+{
+    if (extra > 0.0)
+        return CAVE_STONE;
+
+    FluidLevel base = getAquiferFluidLevel(bn, ts, cn, tc, x, y, z);
+
+    if (fluidLevelAt(base, y) == CAVE_LAVA)
+        return CAVE_LAVA;
+
+    int l = floordiv(x - 5, 16);
+    int m = floordiv(y + 1, 12);
+    int n = floordiv(z - 5, 16);
+
+    int32_t bestD1 = INT32_MAX, bestD2 = INT32_MAX, bestD3 = INT32_MAX;
+    int u1x=0,u1y=0,u1z=0, u2x=0,u2y=0,u2z=0, u3x=0,u3y=0,u3z=0;
+    int u, v, w;
+
+    for (u = 0; u <= 1; u++)
+    for (v = -1; v <= 1; v++)
+    for (w = 0; w <= 1; w++)
+    {
+        int gx = l + u, gy = m + v, gz = n + w;
+        int ax, ay, az;
+        getGridBlockPos(cn, gx, gy, gz, &ax, &ay, &az);
+        int32_t dx = ax - x, dy = ay - y, dz = az - z;
+        int32_t dist = dx*dx + dy*dy + dz*dz;
+
+        if (bestD1 >= dist) {
+            bestD3=bestD2; u3x=u2x; u3y=u2y; u3z=u2z;
+            bestD2=bestD1; u2x=u1x; u2y=u1y; u2z=u1z;
+            bestD1=dist;   u1x=gx;  u1y=gy;  u1z=gz;
+        } else if (bestD2 >= dist) {
+            bestD3=bestD2; u3x=u2x; u3y=u2y; u3z=u2z;
+            bestD2=dist;   u2x=gx;  u2y=gy;  u2z=gz;
+        } else if (bestD3 >= dist) {
+            bestD3=dist;   u3x=gx;  u3y=gy;  u3z=gz;
+        }
+    }
+
+    FluidLevel uu = getGridFluidLevelCached(bn, ts, cn, tc, u1x, u1y, u1z);
+    FluidLevel vv = getGridFluidLevelCached(bn, ts, cn, tc, u2x, u2y, u2z);
+    FluidLevel ww = getGridFluidLevelCached(bn, ts, cn, tc, u3x, u3y, u3z);
+
+    double f;
+    if (fluidLevelAt(uu, y) == CAVE_WATER && defaultFluidBlockState(y - 1) == CAVE_LAVA)
+    {
+        f = 1.0;
+    }
+    else
+    {
+        double xk = maxDistance(bestD1, bestD2);
+        if (xk > -1.0)
+        {
+            double barrierCache = NAN;
+            double g  = calculateBarrierDensity(cn, x, y, z, &barrierCache, uu, vv);
+            double ad = calculateBarrierDensity(cn, x, y, z, &barrierCache, uu, ww);
+            double af = calculateBarrierDensity(cn, x, y, z, &barrierCache, vv, ww);
+            double zk = maxDistance(bestD1, bestD3);
+            double ac = maxDistance(bestD2, bestD3);
+            double h  = xk > 0.0 ? xk : 0.0;
+            double ag = zk > 0.0 ? zk : 0.0;
+            double ah = ac > 0.0 ? ac : 0.0;
+            double m1 = ad * ag, m2 = af * ah;
+            double mx = g > m1 ? g : m1;
+            mx = mx > m2 ? mx : m2;
+            double ai = 2.0 * h * mx;
+            f = ai > 0.0 ? ai : 0.0;
+        }
+        else
+        {
+            f = 0.0;
+        }
+    }
+
+    if (extra + f <= 0.0)
+        return fluidLevelAt(uu, y);
+    return CAVE_STONE;
+}
+
+int getCaveBlockStateCached(
+    const BiomeNoise    *bn,
+    const TerrainNoise  *tn,
+    const TerrainShaper *ts,
+    const CaveNoise     *cn,
+    TerrainCache        *tc,
+    int x, int y, int z)
+{
+    if (y < -60 || y > 254)
+        return CAVE_AIR;
+
+    double density = sampleTerrainDensityCavesInterpolated(bn, tn, ts, cn, tc, x, y, z);
+    if (density <= -64.0)
+        return defaultFluidBlockState(y);
+
+    double extra = sampleNoodleAdjustedDensityInterpolated(cn, tc, density, x, y, z);
+    return applyAquiferState(bn, ts, cn, tc, x, y, z, extra);
 }
