@@ -17,6 +17,9 @@
 #include <float.h>
 
 
+#define PI 3.14159265358979323846
+
+
 //==============================================================================
 // Noise
 //==============================================================================
@@ -368,6 +371,128 @@ int genNetherScaled(const NetherNoise *nn, int *out, Range r, int mc, uint64_t s
     }
 }
 
+NetherTerrain *netherTerrain(uint64_t seed)
+{
+    static _Thread_local NetherTerrain *nt;
+    if (!nt)
+    {
+        nt = (NetherTerrain *) malloc(sizeof(NetherTerrain));
+        initNetherTerrain(nt, seed);
+    }
+    else if (nt->seed != seed)
+        initNetherTerrain(nt, seed);
+    return nt;
+}
+
+void initNetherTerrain(NetherTerrain *nt, uint64_t seed)
+{
+    int i;
+    nt->seed = seed;
+    initSurfaceNoise(&nt->sn, DIM_OVERWORLD, seed);
+    nt->sn.xzScale  = 1;
+    nt->sn.yScale   = 3;
+    nt->sn.xzFactor = 80;
+    nt->sn.yFactor  = 60;
+    for (i = 0; i < 4; i++)
+    {
+        setSeed((uint32_t) seed + i);
+        perlinInit(&nt->cap[i]);
+    }
+    for (i = 0; i < 17; i++)
+    {
+        int t = (i > 8) ? (16 - i) : i;
+        double col = cos(i * (6.0 * PI / 17.0)) * 2.0;
+        // stronger pull toward solid near the very top/bottom
+        if (t < 4)
+            col -= (4 - t) * (4 - t) * (4 - t) * 10.0;
+        nt->col[i] = col;
+    }
+    for (i = 0; i < 256; i++)
+    {
+        nt->cols[i].gx = INT_MIN;
+    }
+}
+
+static const double *netherColumn(NetherTerrain *nt, int gx, int gz)
+{
+    NetherColumn *c = &nt->cols[(gx & 15) << 4 | (gz & 15)];
+    if (c->gx == gx && c->gz == gz)
+        return c->d;
+    c->gx = gx;
+    c->gz = gz;
+    for (int i = 0; i < 17; i++)
+    {
+        double v = sampleSurfaceNoise(&nt->sn, gx, i, gz) - nt->col[i];
+        // fade out the top of the column
+        if (i > 13)
+        {
+            double f = (i - 13) / 3.0;
+            v = v * (1 - f) - 10 * f;
+        }
+        c->d[i] = v;
+    }
+    return c->d;
+}
+
+double sampleNetherDensity(NetherTerrain *nt, int x, int y, int z)
+{
+    int gx = x >> 2;
+    int gy = y >> 3;
+    int gz = z >> 2;
+    double fx = (x & 3) / 4.0;
+    double fy = (y & 7) / 8.0;
+    double fz = (z & 3) / 4.0;
+    double v[2][2][2];
+    int i, j;
+    for (i = 0; i < 2; i++)
+    for (j = 0; j < 2; j++)
+    {
+        const double *d = netherColumn(nt, gx+i, gz+j);
+        v[i][j][0] = d[gy];
+        v[i][j][1] = d[gy+1];
+    }
+    double v0 = lerp(fx, lerp(fz, v[0][0][0], v[0][1][0]), lerp(fz, v[1][0][0], v[1][1][0]));
+    double v1 = lerp(fx, lerp(fz, v[0][0][1], v[0][1][1]), lerp(fz, v[1][0][1], v[1][1][1]));
+    return lerp(fy, v0, v1);
+}
+
+int isNetherSolid(NetherTerrain *nt, int x, int y, int z)
+{
+    if (y < 0 || y >= 128)
+        return 1;
+    return sampleNetherDensity(nt, x, y, z) > 0.0;
+}
+
+// the larger of the soul sand and soul soil noises at (x/16, 32, z/16)
+int getNetherCapMaterial(const NetherTerrain *nt, int x, int z, int ceiling)
+{
+    const PerlinNoise *sand = &nt->cap[2 * ceiling];
+    const PerlinNoise *soil = &nt->cap[2 * ceiling + 1];
+    double soilVal = samplePerlin(soil, x / 16.0, 32, z / 16.0, 0, 0);
+    double sandVal = samplePerlin(sand, x / 16.0, 32, z / 16.0, 0, 0);
+    return (soilVal > sandVal) ? NB_SOUL_SOIL : NB_SOUL_SAND;
+}
+
+int getNetherBlock(NetherTerrain *nt, int x, int y, int z, int soulValley)
+{
+    if (y <= 0 || y >= 128 - 1)
+        return NB_BEDROCK;
+    if (!isNetherSolid(nt, x, y, z))
+        return (y < 32) ? NB_LAVA : NB_AIR;
+    if (!soulValley)
+        return NB_NETHERRACK;
+    // floor
+    for (int k = 1; k <= 3; k++) {
+        if (!isNetherSolid(nt, x, y + k, z))
+            return getNetherCapMaterial(nt, x, z, 0);
+    }
+    // above
+    for (int k = 1; k <= 3; k++) {
+        if (!isNetherSolid(nt, x, y - k, z))
+            return getNetherCapMaterial(nt, x, z, 1);
+    }
+    return NB_NETHERRACK;
+}
 
 void setEndSeed(EndNoise *en, int mc, uint64_t seed)
 {
@@ -552,27 +677,144 @@ float getEndHeightNoise(const EndNoise *en, int x, int z, int range)
     return ret;
 }
 
+// Bedrock samples the End terrain noise in float with ImprovedNoise::_readArea, which
+// keeps the corner gradients of a unit cube while consecutive samples of a column stay
+// in it (and uses frac(yo) for the cube of y = 0)
+static const float g_endGrad[16][3] = {
+    { 1, 1, 0}, {-1, 1, 0}, { 1,-1, 0}, {-1,-1, 0}, { 1, 0, 1}, {-1, 0, 1}, { 1, 0,-1}, {-1, 0,-1},
+    { 0, 1, 1}, { 0,-1, 1}, { 0, 1,-1}, { 0,-1,-1}, { 1, 1, 0}, { 0,-1, 1}, {-1, 1, 0}, { 0,-1,-1},
+};
+
+static inline float gradEnd(int h, float x, float y, float z)
+{
+    const float *g = g_endGrad[h & 15];
+    float r = y * g[1];
+    r += x * g[0];
+    r += z * g[2];
+    return r;
+}
+
+static inline float lerpEnd(float t, float a, float b)
+{
+    return (b - a) * t + a;
+}
+
+static inline float fadeEnd(float t)
+{
+    float r = t * 6.0f;
+    r -= 15.0f;
+    r *= t;
+    r += 10.0f;
+    r *= t;
+    return r * (t * t);
+}
+
+// adds one octave of the samples k = kmin..kmax of a noise column to v[]
+static void addOctaveColumnEnd(float *v, const PerlinNoise *pn, int cx, int cz,
+    int kmin, int kmax, float sxz, float sy, float amp)
+{
+    const uint8_t *p = pn->d;
+    float xo = (float) pn->a;
+    float yo = (float) pn->b;
+    float zo = (float) pn->c;
+    float x = (float) cx * sxz + xo;
+    float z = (float) cz * sxz + zo;
+    float fx = floorf(x);
+    float fz = floorf(z);
+    int xi = (int) fx & 255;
+    int zi = (int) fz & 255;
+    x -= fx;
+    z -= fz;
+    float u = fadeEnd(x);
+    float w = fadeEnd(z);
+    float x1 = x - 1.0f;
+    float z1 = z - 1.0f;
+    int ky = (int) yo;
+    int cached = -1;
+    float a = 0, b = 0, c = 0, d = 0;
+
+    for (int k = kmin; k <= kmax; k++)
+    {
+        float y = (float) k * sy + yo;
+        float fy = floorf(y);
+        int yi = (int) fy;
+        if (yi != cached)
+        {   // the y used by the gradients of this cube
+            float gy;
+            if ((int) y == ky)
+            {
+                gy = yo - (float) ky;
+            }
+            else
+            {
+                int k0 = k;
+                if (k == kmin)
+                {
+                    while (k0 > 0 && floorf((float)(k0 - 1) * sy + yo) == fy)
+                        k0--;
+                }
+                gy = (float) k0 * sy + yo;
+                gy -= floorf(gy);
+                gy -= floorf(gy / sy) * sy;
+            }
+            cached = yi;
+            yi &= 255;
+            int A = p[xi] + yi, B = p[(xi+1) & 255] + yi;
+            int AA = p[A & 255] + zi, AB = p[(A+1) & 255] + zi;
+            int BA = p[B & 255] + zi, BB = p[(B+1) & 255] + zi;
+            float y1 = gy - 1.0f;
+            a = lerpEnd(u, gradEnd(p[AA & 255], x, gy, z),      gradEnd(p[BA & 255], x1, gy, z));
+            b = lerpEnd(u, gradEnd(p[AB & 255], x, y1, z),      gradEnd(p[BB & 255], x1, y1, z));
+            c = lerpEnd(u, gradEnd(p[(AA+1) & 255], x, gy, z1), gradEnd(p[(BA+1) & 255], x1, gy, z1));
+            d = lerpEnd(u, gradEnd(p[(AB+1) & 255], x, y1, z1), gradEnd(p[(BB+1) & 255], x1, y1, z1));
+        }
+        float t = fadeEnd(y - fy);
+        float v0 = (b - a) * t + a;
+        float v1 = (d - c) * t + c;
+        v[k - kmin] += ((v1 - v0) * w + v0) * amp;
+    }
+}
+
+static void sampleColumnEnd(float *v, const OctaveNoise *on, int cx, int cz,
+    int kmin, int kmax, float sxz, float sy)
+{
+    float f = 1.0f;
+    memset(v, 0, sizeof(float) * (kmax - kmin + 1));
+    for (int i = 0; i < on->octcnt; i++, f *= 0.5f) {
+        addOctaveColumnEnd(v, &on->octaves[i], cx, cz, kmin, kmax, f * sxz, f * sy, 1.0f / f);
+    }
+}
+
+static float islandHeightEnd(const EndNoise *en, int x, int z)
+{
+    int hx = x / 2;
+    int hz = z / 2;
+    int i, j;
+    float h = 100.0f - sqrtf((float)z * (float)z + (float)x * (float)x) * 8.0f;
+    if (h > 80) h = 80; else if (!(h > -100)) h = -100;
+    for (i = -12; i <= 12; i++)
+    {
+        for (j = -12; j <= 12; j++)
+        {
+            int64_t rx = hx + i;
+            int64_t rz = hz + j;
+            if (rx*rx + rz*rz <= 4096 || !(sampleSimplex2D(&en->perlin, rx, rz) < -0.9f))
+                continue;
+            int v = (int)((llabs(rx) * 3439 + llabs(rz) * 147) % 13 + 9);
+            float dx = (float)(x - 2*rx);
+            float dz = (float)(z - 2*rz);
+            float g = 100.0f - sqrtf(dz * dz + dx * dx) * (float) v;
+            if (g > 80) g = 80; else if (!(g > -100)) g = -100;
+            if (g > h) h = g;
+        }
+    }
+    return h;
+}
+
 void sampleNoiseColumnEnd(double column[],
     const SurfaceNoise *sn, const EndNoise *en, int x, int z,
     int colymin, int colymax)
 {
-    // clamped (32 + 46 - y) / 64.0
-    static const double upper_drop[] = {
-           1.0,    1.0,    1.0,    1.0,    1.0,    1.0,    1.0,    1.0, // 0-7
-           1.0,    1.0,    1.0,    1.0,    1.0,    1.0,    1.0, 63./64, // 8-15
-        62./64, 61./64, 60./64, 59./64, 58./64, 57./64, 56./64, 55./64, // 16-23
-        54./64, 53./64, 52./64, 51./64, 50./64, 49./64, 48./64, 47./64, // 24-31
-        46./64 // 32
-    };
-    // clamped (y - 1) / 7.0
-    static const double lower_drop[] = {
-          0.0,  0.0, 1./7, 2./7, 3./7, 4./7, 5./7, 6./7, // 0-7
-          1.0,  1.0,  1.0,  1.0,  1.0,  1.0,  1.0,  1.0, // 8-15
-          1.0,  1.0,  1.0,  1.0,  1.0,  1.0,  1.0,  1.0, // 16-23
-          1.0,  1.0,  1.0,  1.0,  1.0,  1.0,  1.0,  1.0, // 24-31
-          1.0, // 32
-    };
-
     int y;
     if (en->mc >= MC_1_0)
     {   // add outer end rings
@@ -585,33 +827,40 @@ void sampleNoiseColumnEnd(double column[],
         }
     }
 
-    // depth is between [-108, +72]
-    // noise is between [-128, +128]
-    // for a sold block we need the upper drop as:
-    //  (72 + 128) * u - 3000 * (1-u) > 0 => upper_drop = u < 15/16
-    // which occurs at y = 18 for the highest relevant noise cell
-    // for the lower drop we need:
-    //  (72 + 128) * l - 30 * (1-l) > 0 => lower_drop = l > 3/23
-    // which occurs at y = 3 for the lowest relevant noise cell
-
-    double depth = getEndHeightNoise(en, x, z, 0) - 8.0f;
+    float island = islandHeightEnd(en, x, z);
+    float vmain[33], vmin[33], vmax[33];
+    sampleColumnEnd(vmain, &sn->octmain, x, z, colymin, colymax, 17.1103f, 4.277575f);
+    sampleColumnEnd(vmin, &sn->octmin, x, z, colymin, colymax, 1368.824f, 684.412f);
+    sampleColumnEnd(vmax, &sn->octmax, x, z, colymin, colymax, 1368.824f, 684.412f);
     for (y = colymin; y <= colymax; y++)
     {
-        if (lower_drop[y] == 0.0) {
-            column[y - colymin] = -30;
-            continue;
+        float t  = vmain[y - colymin] * 0.05f + 0.5f;
+        float lo =  vmin[y - colymin] * 0.001953125f;
+        float hi =  vmax[y - colymin] * 0.001953125f;
+        float d = t < 0 ? lo : t > 1 ? hi : (hi - lo) * t + lo;
+        d = d - 8.0f;
+        d = d + island;
+        if (y > 14)
+        {
+            float f = (float)(y - 14) * 0.015625f;
+            if (f > 1) f = 1;
+            d = (1.0f - f) * d;
+            d = d - f * 3000.0f;
         }
-        double noise = sampleSurfaceNoiseBetween(sn, x, y, z, -128, +128);
-        double clamped = noise + depth;
-        clamped = lerp(upper_drop[y], -3000, clamped);
-        clamped = lerp(lower_drop[y], -30, clamped);
-        column[y - colymin] = clamped;
+        else if (y < 8)
+        {   // not clamped at y = 0
+            float f = (float)(8 - y) * 0.14285715f;
+            d = (1.0f - f) * d;
+            d = d - f * 30.0f;
+        }
+        column[y - colymin] = d;
     }
 }
 
 /* Given bordering noise columns and a fractional position between those,
  * determine the surface block height (i.e. where the interpolated noise > 0).
  * Note that the noise columns should be of size: ncolxz[ colymax-colymin+1 ]
+ * The density is interpolated in float along z, then x, then y like Bedrock.
  */
 int getSurfaceHeight(
         const double ncol00[], const double ncol01[],
@@ -619,25 +868,22 @@ int getSurfaceHeight(
         int colymin, int colymax, int blockspercell, double dx, double dz)
 {
     int y, celly;
+    float tx = (float) dx;
+    float tz = (float) dz;
+    float ty = 1.0f / blockspercell;
     for (celly = colymax-1; celly >= colymin; celly--)
     {
         int idx = celly - colymin;
-        double v000 = ncol00[idx];
-        double v001 = ncol01[idx];
-        double v100 = ncol10[idx];
-        double v101 = ncol11[idx];
-        double v010 = ncol00[idx+1];
-        double v011 = ncol01[idx+1];
-        double v110 = ncol10[idx+1];
-        double v111 = ncol11[idx+1];
-
+        float lo = lerpEnd(tx,
+            lerpEnd(tz, (float) ncol00[idx], (float) ncol01[idx]),
+            lerpEnd(tz, (float) ncol10[idx], (float) ncol11[idx]));
+        float hi = lerpEnd(tx,
+            lerpEnd(tz, (float) ncol00[idx+1], (float) ncol01[idx+1]),
+            lerpEnd(tz, (float) ncol10[idx+1], (float) ncol11[idx+1]));
         for (y = blockspercell - 1; y >= 0; y--)
         {
-            double dy = y / (double) blockspercell;
-            double noise = lerp3(dy, dx, dz, // Note: not x, y, z
-                v000, v010, v100, v110,
-                v001, v011, v101, v111);
-            if (noise > 0)
+            float v = (float) y * ty * (hi - lo) + lo;
+            if (v > 0)
                 return celly * blockspercell + y;
         }
     }

@@ -47,6 +47,9 @@ enum StructureType
     Trail_Ruins,
     Trial_Chambers,
     Abandoned_Camp,
+    Fossil_Coal,
+    Fossil_Diamond,
+    Fossil_N,
     FEATURE_NUM
 };
 
@@ -96,6 +99,7 @@ STRUCT(StructureVariant)
     uint8_t large       :1; // large ocean ruin
     uint8_t cluster     :1; // has cluster of ocean ruin
     uint8_t secret      :1; // camp secret chest
+    uint8_t ghast       :1; // nether fossil with a dried ghast
     float_t thick;          // ravine thickness
     float_t yaw;            // ravine yaw
     float_t pitch;          // ravine pitch
@@ -115,7 +119,7 @@ STRUCT(Piece)
     Pos3 pos;           // position
     BB bb;              // bounding box limits
     uint8_t rot;        // rotation
-    int8_t depth;
+    int32_t depth;
     int8_t type;
     Piece *next;
 };
@@ -272,6 +276,14 @@ int getGeodes(int mc, uint64_t seed, int chunkX, int chunkZ,
 int getLavaLakes(int mc, uint64_t seed, int chunkX, int chunkZ,
         int chunkW, int chunkH, Pos *out, int nout, int isDesert);
 
+/* Finds a fossil structure in the given chunk.
+ * The fossil variant is returned in 'r' and the Y-level is written
+ */
+int fossilAt(StructureVariant *r, StructureConfig sc, int mc, uint64_t seed, 
+        int cx, int cz, int *ruleY);
+int netherFossilY(int mc, uint64_t seed, int bx0, int bz0,
+        const StructureVariant *sv, int ruleY);
+
 // not exacly a structure
 static inline ATTR(const)
 int isSlimeChunk(int chunkX, int chunkZ)
@@ -403,6 +415,12 @@ uint64_t chunkGenerateRnd(uint64_t worldSeed, int chunkX, int chunkZ)
 int getVariant(StructureVariant *sv, int structType, int mc, uint64_t seed,
         int blockX, int blockZ, int biomeID);
 
+/* Columns of the template of a village (jigsaw), ancient city or end city piece that hold blocks, seen
+ * from above: sz rows of sx chars ('#' = block) in template-local coordinates, which go to
+ * the world by the rotation of the piece around p->pos. NULL if the template is unknown.
+ */
+const char *getPieceFootprint(int structType, const Piece *p, int *sx, int *sz);
+
 /* Generate the structure pieces of an End City. This pieces buffer should be
  * large enough to hold END_CITY_PIECES_MAX elements.
  * @pieces          : output buffer
@@ -465,7 +483,7 @@ STRUCT(StrongholdPortalFrame)
 {
     Pos3 pos;
     int frameId;
-    uint8_t hasEye;
+    int8_t hasEye;
 };
 
 STRUCT(StrongholdLayout)
@@ -485,6 +503,14 @@ int getStrongholdLayout(StrongholdLayout *sh, int mc, uint64_t seed, int chunkX,
  */
 int getStrongholdPortalFrames(StrongholdPortalFrame *frames,
         const StrongholdLayout *sh);
+
+/* Same as getStrongholdPortalFrames, but for versions before 26.50 it marks
+ * frames as unknown (hasEye = -1) when a village piece intersects the frame's
+ * chunk. Before 26.50 the village and stronghold share the chunk RNG, and the
+ * number of village draws depends on the chunk generation order.
+ */
+int getStrongholdPortalFramesG(StrongholdPortalFrame *frames,
+        const StrongholdLayout *sh, Generator *g);
 
 /* Generate the structure pieces of a Nether Fortress. The maximum number of
  * pieces that are generated is limited to 'n'. A buffer length of around 400
@@ -582,13 +608,18 @@ int addTunnel(Piece *list, uint32_t tunnelSeed,
 
 int getEndGatewayPos(uint64_t seed, EndNoise en, SurfaceNoise sn, int chunkX, int chunkZ, Pos *pos);
 
+int getEndGatewayPos3(uint64_t seed, const EndNoise *en, const SurfaceNoise *sn,
+    int chunkX, int chunkZ, Pos3 *pos);
+
 /* Find the 20 fixed inner positions where End Gateways generate upon defeating
  * the Dragon. The positions are written to 'src' in generation order.
  */
 void getFixedEndGateways(int mc, uint64_t seed, Pos src[20]);
 
-/* Get the outer linked Gateway destination for an inner source Gateway.
- * (mc > MC_1_12)
+/* Get the outer linked Gateway for an inner source Gateway (Bedrock:
+ * EndGatewayBlockActor::findExitPortal, findValidSpawnAround, findTallestBlock).
+ * getLinkedGatewayChunk() returns the chunk of the exit point (written to dst);
+ * getLinkedGatewayPos() returns the outer gateway block (tallest block + 10).
  */
 Pos getLinkedGatewayChunk(const EndNoise *en, const SurfaceNoise *sn,
     uint64_t seed, Pos src, Pos *dst);
@@ -630,6 +661,31 @@ enum
 };
 
 int getPreVillagePieces(Piece *list, int n, uint64_t seed, int chunkX, int chunkZ);
+
+enum
+{   // Village piece types (1.11+)
+    VILLAGE_CENTER,
+    VILLAGE_STREET,
+    VILLAGE_HOUSE,
+    VILLAGE_TERMINATOR,
+    VILLAGE_DECOR,
+    VILLAGE_ANIMAL,
+    VILLAGE_PIECES_MAX = 512,
+};
+
+int getVillagePieces(Piece *list, int n, int mc, uint64_t seed, int chunkX, int chunkZ, int biomeID);
+
+enum
+{   // Ancient city piece types
+    AC_CITY_CENTER,
+    AC_ENTRANCE,
+    AC_STRUCTURES,
+    AC_WALLS,
+    AC_SCULK,
+    AC_PIECES_MAX = 512,
+};
+
+int getAncientCityPieces(Piece *list, int n, int mc, uint64_t seed, int chunkX, int chunkZ);
 
 
 //==============================================================================

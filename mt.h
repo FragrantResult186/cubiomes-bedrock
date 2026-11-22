@@ -5,36 +5,99 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#if defined(_WIN32) && defined(__GNUC__) && defined(__x86_64__)
+#include <intrin.h>
+#endif
+
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
-uint32_t mt_next();
-void mt_seed(uint32_t seed_value);
+enum {
+    MT_N   = 624,
+    MT_BUF = 2048
+};
+
+typedef struct MTState
+{
+    uint32_t mt[MT_N];
+    uint32_t out[MT_BUF];
+    uint32_t seed;
+    int init;
+    int k;              // next mt[] entry to twist
+    uint64_t gen;       // outputs generated since seeding
+    uint64_t pos;       // outputs consumed since seeding
+    uint32_t last;      // last generated value (for pos >= MT_BUF)
+    uint64_t ws;        // cached world seed
+    int a;
+    int b;
+    int hasWs;
+} MTState;
 
 typedef struct MTRngState
 {
-    uint32_t MT[624];
-    size_t index;
-    size_t index_fast;
+    uint32_t seed;
+    uint64_t pos;
     uint64_t ws;
     int a;
     int b;
+    int hasWs;
 } MTRngState;
 
-void mt_get_state(MTRngState *out);
-void mt_set_state(const MTRngState *in);
-
-#ifdef _MSC_VER
-extern __declspec(thread) uint64_t mt_ws;
-extern __declspec(thread) int mt_a;
-extern __declspec(thread) int mt_b;
+#if defined(_WIN32) && defined(__GNUC__) && defined(__x86_64__)
+/**
+ * MinGW _Thread_local uses emutls (function call).
+ * Read the TLS slot directly from TEB instead.
+ */
+extern uint32_t mt_tls_slot;
+MTState *mt_state_init(void);
+static inline MTState *mt_state(void)
+{
+  MTState *s = (MTState *)__readgsqword(0x1480 + 8 * mt_tls_slot);
+  return s ? s : mt_state_init();
+}
+#elif defined(_MSC_VER)
+extern __declspec(thread) MTState mt_tls;
+static inline MTState *mt_state(void) { return &mt_tls; }
 #else
-extern __thread uint64_t mt_ws;
-extern __thread int mt_a;
-extern __thread int mt_b;
+extern _Thread_local MTState mt_tls;
+static inline MTState *mt_state(void) { return &mt_tls; }
 #endif
+
+void mt_seed(uint32_t seed_value);
+uint32_t mt_next_slow(MTState *s);
+
+static inline uint32_t mt_next(void)
+{
+    MTState *s = mt_state();
+    if (s->pos < s->gen && s->pos < MT_BUF)
+        return s->out[s->pos++];
+    return mt_next_slow(s);
+}
+
+static inline void mt_get_state(MTRngState *out)
+{
+    const MTState *s = mt_state();
+    out->seed  = s->seed;
+    out->pos   = s->pos;
+    out->ws    = s->ws;
+    out->a     = s->a;
+    out->b     = s->b;
+    out->hasWs = s->hasWs;
+}
+
+static inline void mt_set_state(const MTRngState *in)
+{
+    MTState *s = mt_state();
+    if (!s->init || s->seed != in->seed)
+        mt_seed(in->seed);
+    s->pos   = in->pos;
+    s->ws    = in->ws;
+    s->a     = in->a;
+    s->b     = in->b;
+    s->hasWs = in->hasWs;
+}
 
 static inline void setSeed(uint32_t value)
 {
@@ -73,7 +136,7 @@ static inline float nextFloat()
 
 static inline void skipNextN(int n)
 {
-    for (int i = 0; i < n; i++) mt_next();
+    mt_state()->pos += n;
 }
 
 //==============================================================================
@@ -82,6 +145,25 @@ static inline void skipNextN(int n)
 
 #define REGION_A 341873128712L
 #define REGION_B 132897987541L
+
+static inline const MTState *worldSeedAB(uint64_t worldSeed)
+{
+    MTState *s = mt_state();
+    if (!s->hasWs || s->ws != worldSeed) {
+        setSeed(worldSeed);
+        s->a = next();
+        s->b = next();
+        s->ws = worldSeed;
+        s->hasWs = 1;
+    }
+    return s;
+}
+
+static inline uint32_t populationSeed(uint64_t worldSeed, int chunkX, int chunkZ)
+{
+    const MTState *s = worldSeedAB(worldSeed);
+    return (chunkX * (s->a | 1u) + chunkZ * (s->b | 1u)) ^ worldSeed;
+}
 
 static inline int32_t setTerrainSeed(int chunkX, int chunkZ)
 {
@@ -92,28 +174,14 @@ static inline int32_t setTerrainSeed(int chunkX, int chunkZ)
 
 static inline uint32_t setPopulationSeed(uint64_t worldSeed, int chunkX, int chunkZ)
 {
-    if (mt_ws != worldSeed)
-    {
-        setSeed(worldSeed);
-        mt_a = next();
-        mt_b = next();
-        mt_ws = worldSeed;
-    }
-    uint32_t seed = (chunkX * (mt_a | 1u) + chunkZ * (mt_b | 1u)) ^ worldSeed;
+    uint32_t seed = populationSeed(worldSeed, chunkX, chunkZ);
     setSeed(seed);
     return seed;
 }
 
 static inline uint32_t setDecorationSeed(uint64_t worldSeed, int chunkX, int chunkZ, int salt)
 {
-    if (mt_ws != worldSeed)
-    {
-        setSeed(worldSeed);
-        mt_a = next();
-        mt_b = next();
-        mt_ws = worldSeed;
-    }
-    uint32_t seed = (chunkX * (mt_a | 1u) + chunkZ * (mt_b | 1u)) ^ worldSeed;
+    uint32_t seed = populationSeed(worldSeed, chunkX, chunkZ);
     seed = ((seed >> 2) + (seed << 6) + salt - 1640531527u) ^ seed;
     setSeed(seed);
     return seed;
@@ -121,14 +189,8 @@ static inline uint32_t setDecorationSeed(uint64_t worldSeed, int chunkX, int chu
 
 static inline uint32_t setCarverSeed(uint64_t worldSeed, int chunkX, int chunkZ)
 {
-    if (mt_ws != worldSeed)
-    {
-        setSeed(worldSeed);
-        mt_a = next();
-        mt_b = next();
-        mt_ws = worldSeed;
-    }
-    uint32_t seed = (chunkX * mt_a) ^ (chunkZ * mt_b) ^ worldSeed;
+    const MTState *s = worldSeedAB(worldSeed);
+    uint32_t seed = (chunkX * s->a) ^ (chunkZ * s->b) ^ worldSeed;
     setSeed(seed);
     return seed;
 }

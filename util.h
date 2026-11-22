@@ -46,6 +46,26 @@ static inline int intersects(const BB *a, const BB *b)
            a->maxY >= b->minY && a->minY <= b->maxY;
 }
 
+static inline int contains(const BB *a, const BB *b)
+{
+    return a->minX <= b->minX && b->maxX <= a->maxX &&
+           a->minY <= b->minY && b->maxY <= a->maxY &&
+           a->minZ <= b->minZ && b->maxZ <= a->maxZ;
+}
+
+static inline int inBB(const BB *box, Pos3 pos)
+{
+    return pos.x >= box->minX && pos.x <= box->maxX &&
+           pos.y >= box->minY && pos.y <= box->maxY &&
+           pos.z >= box->minZ && pos.z <= box->maxZ;
+}
+
+static inline int overlapXZ(const BB *a, const BB *b)
+{
+    return a->maxX >= b->minX && a->minX <= b->maxX &&
+           a->maxZ >= b->minZ && a->minZ <= b->maxZ;
+}
+
 static inline int xSize(const BB *b)
 {
     return b->maxX - b->minX + 1;

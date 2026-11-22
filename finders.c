@@ -1,6 +1,10 @@
 #include "finders.h"
 #include "biomes.h"
 #include "util.h"
+#include "jigsaw.h"
+#include "tables/structure/village.h"
+#include "tables/structure/ancient_city.h"
+#include "tables/structure/footprint.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -58,6 +62,10 @@ int getStructureConfig(int structureType, int mc, StructureConfig *sconf)
     s_desert_well           = {-1160484816,  1,  1, Desert_Well,    DIM_OVERWORLD, 500,    BEDROCK_RANDOM},
     s_geode_117             = { 1974035328,  1,  1, Geode,          DIM_OVERWORLD,  53,    BEDROCK_RANDOM},
     s_geode                 = { 1974035328,  1,  1, Geode,          DIM_OVERWORLD,  24,    BEDROCK_RANDOM},
+    s_fossil_coal           = { 2116138073,  1,  1, Fossil_Coal,    DIM_OVERWORLD,  64,    BEDROCK_RANDOM},
+    s_fossil_diamond        = {  877307113,  1,  1, Fossil_Diamond, DIM_OVERWORLD,  64,    BEDROCK_RANDOM},
+    s_fossil_n_116          = {  -17526839,  1,  1, Fossil_N,       DIM_NETHER,      6,    BEDROCK_RANDOM},
+    s_fossil_n              = {  -17526839,  1,  1, Fossil_N,       DIM_NETHER,      2,    BEDROCK_RANDOM},
     s_dungeon               = {          0,  1,  1, Dungeon,        DIM_OVERWORLD,   0,    BEDROCK_RANDOM},
     s_end_island            = {          0,  1,  1, End_Island,     DIM_END,        14,    BEDROCK_RANDOM},
     s_ravine_215            = {          0,  1,  1, Ravine,         DIM_OVERWORLD, 150,    BEDROCK_RANDOM},
@@ -142,8 +150,7 @@ int getStructureConfig(int structureType, int mc, StructureConfig *sconf)
         return mc >= MC_1_0; 
     case End_Island:
         *sconf = s_end_island;
-        // exists pre-1.6 but logic unknown
-        return mc >= MC_1_6;
+        return mc >= MC_1_4;
     case Desert_Well:
         *sconf = s_desert_well;
         // wells were introduced in 1.2, but we only support decorator features
@@ -155,6 +162,15 @@ int getStructureConfig(int structureType, int mc, StructureConfig *sconf)
     case Geode:
         *sconf = mc < MC_1_18 ? s_geode_117 : s_geode;
         return mc >= MC_1_17;
+    case Fossil_Coal:
+        *sconf = s_fossil_coal;
+        return mc >= MC_1_18;
+    case Fossil_Diamond:
+        *sconf = s_fossil_diamond;
+        return mc >= MC_1_18;
+    case Fossil_N:
+        *sconf = mc < MC_26_20 ? s_fossil_n_116 : s_fossil_n;
+        return mc >= MC_1_16;
     case Dungeon:
         *sconf = s_dungeon;
         // only 1.18+ dungeons are supported
@@ -176,6 +192,31 @@ int getStructureConfig(int structureType, int mc, StructureConfig *sconf)
 }
 
 
+// Skips the draws of TheEndGenerator::postProcess before the End islands and plants.
+// Before 1.6 the End used the default biome decorator, whose ore loops draw in every chunk:
+// each attempt is 3 (pos) + 3 + size (ore) draws.
+static void skipEndPopulation(int mc)
+{
+    if (mc < MC_1_6)
+    {
+        skipNextN(10*39 + 8*39); // dirt, gravel
+        if (nextInt(16) == 0)
+            skipNextN(80*39);    // extra gravel
+        skipNextN(
+            30*39 + // granite, diorite, andesite
+            20*23 + // coal
+            20*15 + // iron
+             2*15 + // gold
+             8*14 + // redstone
+             1*14 + // diamond
+             1*14   // lapis
+        );
+    }
+    else if (mc >= MC_1_18)
+    {
+        skipNextN(1);
+    }
+}
 
 int getStructurePos(int structureType, int mc, uint64_t seed, int regX, int regZ, Pos *pos)
 {
@@ -301,8 +342,7 @@ int getStructurePos(int structureType, int mc, uint64_t seed, int regX, int regZ
         if ((pos->x*(int64_t)pos->x + pos->z*(int64_t)pos->z) < 1008*1008LL)
             return 0;
         setPopulationSeed(seed, regX, regZ);
-        if (mc >= MC_1_18)
-            skipNextN(1);
+        skipEndPopulation(mc);
         if (nextInt(sconf.rarity) != 0) return 0;
         pos->x += nextInt(16) + 8;
         nextInt(16);// y
@@ -318,6 +358,17 @@ int getStructurePos(int structureType, int mc, uint64_t seed, int regX, int regZ
         if (nextInt(sconf.rarity) != 0) return 0;
         pos->x += 4;
         pos->z += 4;
+        return 1;
+    }
+
+    case Fossil_Coal:
+    case Fossil_Diamond:
+    case Fossil_N:
+    {
+        StructureVariant sv;
+        if (!fossilAt(&sv, sconf, mc, seed, regX, regZ, NULL)) return 0;
+        pos->x = (regX << 4) + sv.x;
+        pos->z = (regZ << 4) + sv.z;
         return 1;
     }
 
@@ -480,6 +531,119 @@ int getLavaLakes(int mc, uint64_t seed, int cx0, int cz0, int cx1, int cz1,
     return n;
 }
 
+int fossilAt(StructureVariant *r, StructureConfig sc, int mc, uint64_t seed, int cx, int cz, int *ruleY)
+{
+    static const uint8_t size_o[8][3] = {
+        {3,3,13}, {5,4,13}, {7,4,13}, {9,5,13}, {6,5,7}, {7,5,5}, {5,4,5}, {4,4,4},
+    };
+    static const uint8_t size_n[14][3] = {
+        {4,4,5}, {5,1,5}, {3,4,2}, {3,4,1}, {2,5,1}, {7,5,5}, {4,6,5},
+        {3,5,1}, {3,5,5}, {3,7,1}, {5,5,7}, {4,4,3}, {4,5,6}, {7,7,6},
+    };
+    int nether = sc.structType == Fossil_N;
+    memset(r, 0, sizeof(*r));
+    r->biome = -1;
+    setDecorationSeed(seed, cx, cz, sc.salt);
+    if (nextInt(sc.rarity) >= (nether && mc < MC_26_20 ? 2 : 1)) // 2/6 before 1.21.90
+        return 0;
+    int y, placeY = 320; // unknown
+    if (nether)
+    {
+        r->x = nextInt(16);
+        r->z = nextInt(16);
+        y = mc < MC_26_20 ? nextInt(124) : 32 + nextInt(93);
+    }
+    else if (sc.structType == Fossil_Coal)
+    {
+        y = nextInt(320); // 0..319
+    }
+    else
+    {   // Fossil_Diamond
+        y = nextInt(56) - 64; // -64..-9
+        skipNextN(2);
+        placeY = y - 15 - nextInt(10);
+        if (placeY < -54)
+            placeY = -54;
+    }
+    if (ruleY)
+        *ruleY = y;
+    // the feature gets a Random seeded again with the same seed
+    setDecorationSeed(seed, cx, cz, sc.salt);
+    r->rotation = nextInt(4);
+    r->start = nextInt(nether ? 14 : 8);
+    const uint8_t *sz = nether ? size_n[r->start] : size_o[r->start];
+    r->sx = sz[(r->rotation & 1) ? 2 : 0];
+    r->sy = sz[1];
+    r->sz = sz[(r->rotation & 1) ? 0 : 2];
+    if (!nether)
+    {
+        r->x = nextInt(16 - r->sx);
+        r->z = nextInt(16 - r->sz);
+    }
+    r->y = placeY;
+    return 1;
+}
+
+// the template is rotated about its origin
+static void cornerOffset(const StructureVariant *sv, int *dx, int *dz)
+{
+    *dx = (sv->rotation == 1 || sv->rotation == 2) ? 1 - sv->sx : 0;
+    *dz = (sv->rotation == 2 || sv->rotation == 3) ? 1 - sv->sz : 0;
+}
+
+static int netherFossilYImpl(int mc, uint64_t seed, int bx0, int bz0, const StructureVariant *sv, int ruleY)
+{
+    NetherTerrain *nt = netherTerrain(seed);
+    int xs[2] = {bx0, bx0 + sv->sx - 1};
+    int zs[2] = {bz0, bz0 + sv->sz - 1};
+    int y, i;
+    if (mc >= MC_26_20)
+    {
+        int h = sv->sy - 1;
+        if (h == 0 || ruleY + h > 126)
+            return -1;
+        for (y = ruleY - 1; y >= 33; y--)
+        {
+            for (i = 0; i < 4; i++)
+                if (!isNetherSolid(nt, xs[i & 1], y,     zs[i >> 1]) ||
+                    getNetherBlock(nt, xs[i & 1], y + h, zs[i >> 1], 0) != NB_AIR)
+                    break;
+            if (i == 4)
+                return y + 1;
+        }
+        return -1;
+    }
+    if (ruleY + sv->sy >= 128)
+        return -1;
+    for (y = ruleY - 1; y > 32; y--)
+    {
+        for (i = 0; i < 4; i++) {
+            if (getNetherBlock(nt, xs[i & 1], y, zs[i >> 1], 1) != NB_SOUL_SOIL)
+                break;
+        }
+        if (i == 4)
+            return y + 1;
+    }
+    return -1;
+}
+
+int netherFossilY(int mc, uint64_t seed, int bx0, int bz0, const StructureVariant *sv, int ruleY)
+{
+    static _Thread_local struct {
+        int valid, mc, bx0, bz0, sx, sy, sz, ruleY, y;
+        uint64_t seed;
+    } last;
+    if (!last.valid || last.mc != mc || last.seed != seed || last.bx0 != bx0 || last.bz0 != bz0 ||
+        last.sx != sv->sx || last.sy != sv->sy || last.sz != sv->sz || last.ruleY != ruleY)
+    {
+        last.y = netherFossilYImpl(mc, seed, bx0, bz0, sv, ruleY);
+        last.valid = 1;
+        last.mc = mc; last.seed = seed; last.bx0 = bx0; last.bz0 = bz0;
+        last.sx = sv->sx; last.sy = sv->sy; last.sz = sv->sz; last.ruleY = ruleY;
+    }
+    return last.y;
+}
+
 int getEndIslands(EndIsland islands[2], int mc, uint64_t seed, int chunkX, int chunkZ)
 {
     StructureConfig sconf;
@@ -491,9 +655,7 @@ int getEndIslands(EndIsland islands[2], int mc, uint64_t seed, int chunkX, int c
     float r;
 
     setPopulationSeed(seed, chunkX, chunkZ);
-    if (mc >= MC_1_18) {
-        skipNextN(1);
-    }
+    skipEndPopulation(mc);
     if (nextInt(sconf.rarity) != 0)
         return 0;
     islands[0].x = nextInt(16) + x + 8;
@@ -501,7 +663,7 @@ int getEndIslands(EndIsland islands[2], int mc, uint64_t seed, int chunkX, int c
     islands[0].z = nextInt(16) + z + 8;
     islands[0].r = nextInt(3) + 4;
     for (r = islands[0].r; r > 0.5; r -= nextInt(2) + 0.5);
-    int second = nextInt(3) == 0;
+    int second = nextInt(4) == 0;
     if (!second)
         return 1;
     islands[1].x = islands[0].x;
@@ -544,11 +706,11 @@ static void applyEndIslandHeight(float *y, const EndIsland *island,
 int mapEndIslandHeight(float *y, const EndNoise *en, uint64_t seed,
     int x, int z, int w, int h, int scale)
 {
-    int rmax = (6 + scale - 1) / scale;
-    int cx = floordiv(x - rmax, 16 / scale);
-    int cz = floordiv(z - rmax, 16 / scale);
-    int cw = floordiv(x + w + rmax, 16 / scale) - cx + 1;
-    int ch = floordiv(z + h + rmax, 16 / scale) - cz + 1;
+    // an island of a chunk covers blocks 2..29 of it (center 8..23, radius up to 6)
+    int cx = floordiv(x * scale - 29, 16);
+    int cz = floordiv(z * scale - 29, 16);
+    int cw = floordiv((x + w) * scale - 3, 16) - cx + 1;
+    int ch = floordiv((z + h) * scale - 3, 16) - cz + 1;
     int ci, cj;
 
     int *ids = (int*) malloc(sizeof(int) * cw * ch);
@@ -1089,18 +1251,64 @@ int isSpawnBiome(int biome_id) {
     }
 }
 
-static int surroundingBiomes(int *biomeIds, int grid, int x, int z)
+static int isSpawnCell(const int *ids, int x, int z, int bounded)
 {
-    int idx = z * grid + x;
-    return isSpawnBiome(biomeIds[idx       ]) &&
-           isSpawnBiome(biomeIds[idx - grid]) &&
-           isSpawnBiome(biomeIds[idx + grid]) &&
-           isSpawnBiome(biomeIds[idx -    1]) &&
-           isSpawnBiome(biomeIds[idx +    1]);
+    static const int dx[4] = {-1,+1, 0, 0};
+    static const int dz[4] = { 0, 0,-1,+1};
+    const int n = 10;
+
+    if (!isSpawnBiome(ids[z*n + x]))
+        return 0;
+    for (int k = 0; k < 4; k++)
+    {
+        int nx = x + dx[k], nz = z + dz[k];
+        int i = nz*n + nx;
+        if (i < 0 || i >= n*n)
+            return 0;
+        if (bounded && (nx < 0 || nx >= n))
+            return 0;
+        if (!isSpawnBiome(ids[i]))
+            return 0;
+    }
+    return 1;
+}
+
+static Pos getSpawnLayered(const Generator *g)
+{
+    const int n = 10;
+    const int bounded = g->mc >= MC_1_12;
+    Pos spawn = {0, 0};
+    Range r = {4, 0, 0, n, n, 0, 1};
+    int *ids = allocCache(g, r);
+    if (!ids)
+        return spawn;
+
+    // the game gives up beyond x = 200000
+    for (r.x = g->mc >= MC_1_16 ? n : 0; r.x * 4 <= 200000; r.x += n)
+    {
+        if (genBiomes(g, ids, r))
+            break;
+        for (int z = 0; z < n; z++)
+        {
+            for (int x = 0; x < n; x++)
+            {
+                if (isSpawnCell(ids, x, z, bounded))
+                {
+                    spawn.x = 4 * (r.x + x);
+                    spawn.z = 4 * z;
+                    free(ids);
+                    return spawn;
+                }
+            }
+        }
+    }
+    free(ids);
+    return spawn;
 }
 
 Pos estimateSpawn(const Generator *g, uint64_t *rng)
 {
+    (void) rng;
     Pos spawn = {0, 0};
 
     if (g->mc >= MC_1_18)
@@ -1122,43 +1330,7 @@ Pos getSpawn(const Generator *g)
         return spawn;
 
     if (g->mc < MC_1_18)
-    {
-        const int grid = 10;
-        int step = g->mc < MC_1_12 ? 0 : 10;
-        int sx   = g->mc < MC_1_12 ? 0 : 1;
-
-        Range r = {4, 0, 0, grid, grid, 0, 1};
-        int *biomeIds = allocCache(g, r);
-
-        if (!biomeIds) {
-            free(biomeIds);
-            return spawn;
-        }
-
-        while (1) {
-            r.x = step;
-            r.z = 0;
-            int err = genBiomes(g, biomeIds, r);
-            if (err != 0) {
-                free(biomeIds);
-                break;
-            }
-
-            for (int z = 1; z < grid-1; z++) {
-                for (int x = sx; x < grid-1; x++) {
-                    if (surroundingBiomes(biomeIds, grid, x, z)) {
-                        spawn.x = 4 * (x + step);
-                        spawn.z = 4 * z;
-                        free(biomeIds);
-                        return spawn;
-                    }
-                }
-            }
-
-            step += grid;
-        }
-        free(biomeIds);
-    }
+        return getSpawnLayered(g);
 
     SurfaceNoise sn;
     initSurfaceNoise(&sn, DIM_OVERWORLD, g->seed);
@@ -1312,6 +1484,17 @@ int isViableFeatureBiome(int mc, int structureType, int biomeID)
 
     case Desert_Well:
         return biomeID == desert;
+
+    case Fossil_Coal:
+        return biomeID == desert || biomeID == desert_hills || biomeID == desert_lakes ||
+               biomeID == swamp  || biomeID == swamp_hills;
+
+    case Fossil_Diamond:
+        return biomeID == desert || biomeID == desert_hills || biomeID == desert_lakes ||
+               biomeID == swamp  || biomeID == swamp_hills  || biomeID == mangrove_swamp;
+
+    case Fossil_N:
+        return biomeID == soul_sand_valley;
 
     case Monument:
         return isDeepOcean(biomeID);
@@ -1551,6 +1734,25 @@ static int monumentNearby(Generator *g, int chunkX, int chunkZ)
     return 0;
 }
 
+static int isViableNetherFossil(Generator *g, int x, int z)
+{
+    StructureConfig sc;
+    StructureVariant sv;
+    int ruleY;
+    if (!getStructureConfig(Fossil_N, g->mc, &sc) ||
+        !fossilAt(&sv, sc, g->mc, g->seed, x >> 4, z >> 4, &ruleY))
+        return 0;
+    int dx, dz;
+    cornerOffset(&sv, &dx, &dz);
+    int bx0 = (x & ~15) + sv.x + dx;
+    int bz0 = (z & ~15) + sv.z + dz;
+    // the biome near the chunk corner +12,+12 as the feature rule tests it
+    int id = getBiomeAt(g, 4, (x>>4)*4+3, 64>>2, (z>>4)*4+3);
+    if (!isViableFeatureBiome(g->mc, Fossil_N, id))
+        return 0;
+    return netherFossilY(g->mc, g->seed, bx0, bz0, &sv, ruleY) >= 0;
+}
+
 int isViableStructurePos(int structureType, Generator *g, int x, int z, uint32_t flags)
 {
     int approx = 0; // enables approximation levels
@@ -1571,6 +1773,8 @@ int isViableStructurePos(int structureType, Generator *g, int x, int z, uint32_t
             return 0;
         if (structureType == Ruined_Portal_N)
             return 1;
+        if (structureType == Fossil_N)
+            return isViableNetherFossil(g, x, z);
         if (structureType == Fortress)
         {   // in 1.18+ fortresses generate everywhere, where bastions don't
             StructureConfig sc;
@@ -1844,6 +2048,21 @@ L_feature:
             goto L_not_viable;
         goto L_viable;
 
+    case Fossil_Coal:
+    case Fossil_Diamond:
+    {   // the rule tests the biome at the chunk corner, at its height drawn with the template
+        StructureConfig sc;
+        StructureVariant sv;
+        int y;
+        if (!getStructureConfig(structureType, g->mc, &sc) ||
+            !fossilAt(&sv, sc, g->mc, g->seed, x>>4, z>>4, &y))
+            goto L_not_viable;
+        id = getBiomeAt(g, 4, (x>>4)*4, y>>2, (z>>4)*4);
+        if (id < 0 || !isViableFeatureBiome(g->mc, structureType, id))
+            goto L_not_viable;
+        goto L_viable;
+    }
+
     case Dungeon:
         if (g->mc < MC_1_18)
             goto L_not_viable;
@@ -1858,7 +2077,6 @@ L_feature:
 
     case Trial_Chambers:
         if (g->mc <= MC_1_20) goto L_not_viable;
-L_jigsaw:
         {
             StructureVariant sv;
             getVariant(&sv, structureType, g->mc, g->seed, x, z, -1);
@@ -2287,7 +2505,7 @@ int getVariant(StructureVariant *r, int structType, int mc, uint64_t seed,
         }
     L_rotate_village_bastion:
         r->sy = sy;
-        if (mc >= MC_1_18)
+        if (mc >= MC_1_18 || structType == Village)
         {
             switch (r->rotation)
             { // 0:0, 1:cw90, 2:cw180, 3:cw270=ccw90
@@ -2295,6 +2513,11 @@ int getVariant(StructureVariant *r, int structType, int mc, uint64_t seed,
             case 1: r->x = 1-sz; r->z = 0;    r->sx = sz; r->sz = sx; break;
             case 2: r->x = 1-sx; r->z = 1-sz; r->sx = sx; r->sz = sz; break;
             case 3: r->x = 0;    r->z = 1-sx; r->sx = sz; r->sz = sx; break;
+            }
+            if (structType == Village)
+            {   // the start piece is placed at the chunk origin, not at the given position
+                r->x -= x & 15;
+                r->z -= z & 15;
             }
         }
         else
@@ -2311,6 +2534,7 @@ int getVariant(StructureVariant *r, int structType, int mc, uint64_t seed,
 
     case Ancient_City:
         setRegionSeed(seed, rpos.x, rpos.z, sc.salt);
+        skipNextN(4);
         r->rotation = nextInt(4);
         r->start = 1 + nextInt(3); // city_center_1..3
         sx = 18; sy = 31; sz = 41;
@@ -2473,13 +2697,16 @@ int getVariant(StructureVariant *r, int structType, int mc, uint64_t seed,
         r->size = nextInt(8) + 4;
         sx = 7; sy = 5; sz = 8;
         r->sy = sy;
+        r->mirror = 0;
         switch (r->rotation)
-        { // orientation: 0:north, 1:east, 2:south, 3:west
-        case 0: r->rotation = 0; r->mirror = 0; r->sx = sx; r->sz = sz; break;
-        case 1: r->rotation = 1; r->mirror = 0; r->sx = sz; r->sz = sx; break;
-        case 2: r->rotation = 0; r->mirror = 1; r->sx = sx; r->sz = sz; break;
-        case 3: r->rotation = 1; r->mirror = 1; r->sx = sz; r->sz = sx; break;
+        { // 0: none, 1: cw90, 2: 180, 3: cw270
+        case 0: r->x = 0;      r->z = 0;      r->sx = sx; r->sz = sz; break;
+        case 1: r->x = 1 - sz; r->z = 0;      r->sx = sz; r->sz = sx; break;
+        case 2: r->x = 1 - sx; r->z = 1 - sz; r->sx = sx; r->sz = sz; break;
+        case 3: r->x = 0;      r->z = 1 - sx; r->sx = sz; r->sz = sx; break;
         }
+        r->x -= x & 15;
+        r->z -= z & 15;
         return 1;
 
     case Desert_Pyramid:
@@ -2511,11 +2738,95 @@ int getVariant(StructureVariant *r, int structType, int mc, uint64_t seed,
         } else {
             r->y = nextIntRange(6, 47); // Y-level
         }
+        // reset seed
+        setDecorationSeed(seed, cx, cz, sc.salt);
         r->size = nextInt(2) + 3; // distribution points
-        skipNextN(2);
+        // 2 ParityImprovedNoise(3+256) + 3 octaves(262)
+        skipNextN(2*(2*(256+3) + 3*262) + 1);
         r->cracked = nextFloat() < 0.95;
         r->x += 5; r->y += 5; r->z += 5;
         return 1;
+
+    case Fossil_Coal:
+    case Fossil_Diamond:
+    case Fossil_N:
+    {
+        int ruleY;
+        int ok = fossilAt(r, sc, mc, seed, cx, cz, &ruleY);
+        int hasGhast = 0, gx = 0, gz = 0;
+        // dried ghast
+        if (ok && structType == Fossil_N && mc >= MC_26_20)
+        {   // the features random goes on with a chance and an offset within the template
+            // which must not be a bone position
+            static const uint8_t bones_n[14][10][2] = {
+                {{0,0},{0,2},{0,4},{3,0},{3,2}},
+                {{0,4},{1,2},{1,4},{2,0},{2,1},{2,2},{2,3},{2,4},{3,4},{4,4}},
+                {{0,0},{0,1}},
+                {{0,0},{2,0}},
+                {{0,0}},
+                {{0,2},{0,4},{2,0},{4,0},{6,2},{6,4}},
+                {{0,2},{0,4},{1,0}},
+                {{2,0}},
+                {{0,0},{0,2},{0,4}},
+                {{2,0}},
+                {{0,0},{0,3},{0,6},{4,0},{4,3},{4,6}},
+                {{0,0},{0,2},{3,0},{3,2}},
+                {{0,0},{1,3},{2,5}},
+                {{0,0},{0,3},{1,5},{5,5},{6,0},{6,3}},
+            };
+            static const uint8_t nbones[14] = {5, 10, 2, 2, 1, 6, 3, 1, 3, 1, 6, 4, 3, 6};
+            int ux = (r->rotation & 1) ? r->sz : r->sx;
+            int uz = (r->rotation & 1) ? r->sx : r->sz;
+            // the far corner offset, rotated
+            int ex[4] = {ux-1, 1-uz, 1-ux, uz-1};
+            int ez[4] = {uz-1, ux-1, 1-uz, 1-ux};
+            int e = ex[r->rotation], d = ez[r->rotation];
+            if (nextDouble() < 0.5)
+            {
+                skipNextN(1);
+                int a = e > 0 ? nextInt(e) : 0;
+                int b = d > 0 ? nextInt(d) : 0;
+                int i;
+                hasGhast = 1;
+                for (i = 0; i < nbones[r->start]; i++) {
+                    if (bones_n[r->start][i][0] == a && bones_n[r->start][i][1] == b) {
+                        hasGhast = 0;
+                        break;
+                    }
+                }
+                int rx[4] = {a, -b, -a, b};
+                int rz[4] = {b, a, -b, -a};
+                gx = (cx << 4) + r->x + rx[r->rotation];
+                gz = (cz << 4) + r->z + rz[r->rotation];
+            }
+        }
+        int dx, dz;
+        cornerOffset(r, &dx, &dz);
+        r->x += dx - (x & 15);
+        r->z += dz - (z & 15);
+        if (ok && structType == Fossil_N)
+        {
+            int y = netherFossilY(mc, seed, x + r->x, z + r->z, r, ruleY);
+            if (y >= 0)
+            {
+                r->y = y;
+                // on a soul soil floor, landing within the fossil height
+                NetherTerrain *nt = netherTerrain(seed);
+                if (hasGhast && getNetherCapMaterial(nt, gx, gz, 0) == NB_SOUL_SOIL)
+                {
+                    int yy;
+                    hasGhast = 0;
+                    for (yy = y - 1; yy < y + r->sy - 2 && !hasGhast; yy++)
+                        hasGhast = isNetherSolid(nt, gx, yy, gz) && getNetherBlock(nt, gx, yy+1, gz, 0) == NB_AIR;
+                }
+                else
+                    hasGhast = 0;
+                r->ghast = hasGhast;
+            }
+        }
+        r->biome = biomeID;
+        return ok;
+    }
 
     case Trial_Chambers:
         uint64_t rng = chunkGenerateRnd(seed, cx, cz);
@@ -2777,7 +3088,7 @@ int genPiecesRecusively(piecefunc_t gen, PieceEnv *env, Piece *current, int dept
     env_local.n = &n_local;
     if (!gen(&env_local, current, depth))
         return 0;
-    int gendepth = nextInt(32);
+    int gendepth = next();
     for (i = 0; i < n_local; i++)
     {
         Piece *p = env_local.list + i;
@@ -2828,7 +3139,8 @@ int genTower(PieceEnv *env, Piece *current, int depth)
             if (!nextBoolean())
                 continue;
             int brot = (rot + binfo[i][0]) & 3;
-            Piece *bridge = addEndCityPiece(env, base, brot,
+            // the bridges start at the chosen floor of the tower, not at its top piece
+            Piece *bridge = addEndCityPiece(env, floor, brot,
                 binfo[i][1], binfo[i][2], binfo[i][3], BRIDGE_END);
             genPiecesRecusively(genBridge, env, bridge, depth+1);
         }
@@ -2868,15 +3180,17 @@ int genBridge(PieceEnv *env, Piece *current, int depth)
     {
         int x = -8 + nextInt(8);
         int z = -70 + nextInt(10);
-        base = addEndCityPiece(env, base, rot, x, y, z, END_SHIP);
+        // the closing bridge end is still placed from the last bridge piece
+        addEndCityPiece(env, base, rot, x, y, z, END_SHIP);
         *env->ship = 1;
     }
     else
-    {
+    {   // the house tower starts at (-3, y + 1, -11) from the last bridge piece
+        env->y = y + 1;
         if (!genPiecesRecusively(genHouseTower, env, base, depth+1))
             return 0;
     }
-    base = addEndCityPiece(env, base, rot, 4, y, 0, BRIDGE_END);
+    base = addEndCityPiece(env, base, (rot+2)&3, 4, y, 0, BRIDGE_END);
     base->depth = -1;
     return 1;
 }
@@ -2982,9 +3296,6 @@ typedef struct
     int ntyp[SH_WEIGHT_TYPES];
     int typlast;
     int typcur;
-    uint64_t seed;
-    uint8_t *eyes;
-    int gotportal;
 } StrongholdEnv;
 
 static
@@ -3026,8 +3337,6 @@ const int stronghold_weights[SH_WEIGHT_TYPES] = {
     SH_PORTAL_ROOM,
 };
 
-static void setPortalFramePos(StrongholdPortalFrame *frames, const Piece *portal);
-static void setPortalFrameEyes(StrongholdEnv *env, const Piece *portal);
 
 static
 Piece *getNextIntersectingPiece(
@@ -3406,24 +3715,12 @@ void extendStrongholdPiece(StrongholdEnv *env, Piece *p)
         break;
     }
     case SH_LIBRARY:
-        break;
     case SH_PORTAL_ROOM:
-        setPortalFrameEyes(env, p);
-        break;
     case SH_SMALL_CORRIDOR:
         break;
     default:
         UNREACHABLE();
     }
-}
-
-static
-int strongholdPieceBaseRngCount(const Piece *p, uint8_t data)
-{
-    int n = stronghold_info[p->type].rngCount;
-    if (p->type == SH_LIBRARY && data)
-        n += 270;
-    return n;
 }
 
 static
@@ -3484,91 +3781,43 @@ int strongholdPieceRngCountInChunk(const Piece *p, uint8_t data,
 static
 void setPortalFramePos(StrongholdPortalFrame *frames, const Piece *portal)
 {
-    BB bb = portal->bb;
-    int rot = portal->rot;
-    switch (rot)
-    {
-    case 0:
-    case 1:
-        frames[0].pos = transformPos(bb, rot, 4, 3, 8);
-        frames[1].pos = transformPos(bb, rot, 5, 3, 8);
-        frames[2].pos = transformPos(bb, rot, 6, 3, 8);
-        frames[3].pos = transformPos(bb, rot, 4, 3, 12);
-        frames[4].pos = transformPos(bb, rot, 5, 3, 12);
-        frames[5].pos = transformPos(bb, rot, 6, 3, 12);
-        frames[6].pos = transformPos(bb, rot, 3, 3, 9);
-        frames[7].pos = transformPos(bb, rot, 3, 3, 10);
-        frames[8].pos = transformPos(bb, rot, 3, 3, 11);
-        frames[9].pos = transformPos(bb, rot, 7, 3, 9);
-        frames[10].pos = transformPos(bb, rot, 7, 3, 10);
-        frames[11].pos = transformPos(bb, rot, 7, 3, 11);
-        break;
-    case 2:
-    case 3:
-        frames[0].pos = transformPos(bb, rot, 6, 3, 8);
-        frames[1].pos = transformPos(bb, rot, 5, 3, 8);
-        frames[2].pos = transformPos(bb, rot, 4, 3, 8);
-        frames[3].pos = transformPos(bb, rot, 6, 3, 12);
-        frames[4].pos = transformPos(bb, rot, 5, 3, 12);
-        frames[5].pos = transformPos(bb, rot, 4, 3, 12);
-        if (rot == 2)
-        {
-            frames[6].pos = transformPos(bb, rot, 3, 3, 9);
-            frames[7].pos = transformPos(bb, rot, 3, 3, 10);
-            frames[8].pos = transformPos(bb, rot, 3, 3, 11);
-            frames[9].pos = transformPos(bb, rot, 7, 3, 9);
-            frames[10].pos = transformPos(bb, rot, 7, 3, 10);
-            frames[11].pos = transformPos(bb, rot, 7, 3, 11);
-        }
-        else
-        {
-            frames[6].pos = transformPos(bb, rot, 7, 3, 9);
-            frames[7].pos = transformPos(bb, rot, 7, 3, 10);
-            frames[8].pos = transformPos(bb, rot, 7, 3, 11);
-            frames[9].pos = transformPos(bb, rot, 3, 3, 9);
-            frames[10].pos = transformPos(bb, rot, 3, 3, 10);
-            frames[11].pos = transformPos(bb, rot, 3, 3, 11);
-        }
-        break;
-    default:
-        UNREACHABLE();
-    }
+    static const int rel[12][2] = {
+        {4, 8}, {5, 8}, {6, 8}, {4,12}, {5,12}, {6,12},
+        {3, 9}, {3,10}, {3,11}, {7, 9}, {7,10}, {7,11},
+    };
+    int i;
+    for (i = 0; i < 12; i++)
+        frames[i].pos = transformPos(portal->bb, portal->rot, rel[i][0], 3, rel[i][1]);
 }
 
-/**
- * This differs from the original process as it focuses exclusively on RNG calls for eye counts.
- * It avoids unnecessary generation in chunks where portal rooms do not overlap.
- */
-static
-void setPortalFrameEyes(StrongholdEnv *env, const Piece *portal)
+static const Piece *getPortalRoom(const StrongholdLayout *sh)
 {
-    StrongholdPortalFrame frames[12];
-    MTRngState saved;
-    int i, j;
+    for (int i = 0; i < sh->count; i++)
+        if (sh->pieces[i].type == SH_PORTAL_ROOM)
+            return sh->pieces + i;
+    return NULL;
+}
 
-    if (env->eyes == NULL || env->gotportal)
-        return;
+static int portalPrefixInChunk(const StrongholdLayout *sh, const Piece *portal, int cx, int cz)
+{
+    int n = 0;
+    for (int j = 0; j < (int)(portal - sh->pieces); j++)
+        n += strongholdPieceRngCountInChunk(sh->pieces + j, sh->data[j], cx, cz);
+    return n;
+}
 
-    setPortalFramePos(frames, portal);
-    mt_get_state(&saved);
-    for (i = 0; i < 12; i++)
-    {
-        int chunkX = floordiv(frames[i].pos.x, 16);
-        int chunkZ = floordiv(frames[i].pos.z, 16);
-        int rngCount = 0;
-        for (j = 0; j < env->count; j++)
-            rngCount += strongholdPieceRngCountInChunk(env->list + j, env->data[j], chunkX, chunkZ);
-        setPopulationSeed(env->seed, chunkX, chunkZ);
-        skipNextN(rngCount + i);
-        env->eyes[i] = nextFloat() > 0.9f; // 10% chance
-    }
-    mt_set_state(&saved);
-    env->gotportal = 1;
+static int portalFrameEye(const StrongholdLayout *sh, const Piece *portal, Pos3 pos, int i)
+{
+    int chunkX = floordiv(pos.x, 16);
+    int chunkZ = floordiv(pos.z, 16);
+    setPopulationSeed(sh->seed, chunkX, chunkZ);
+    skipNextN(portalPrefixInChunk(sh, portal, chunkX, chunkZ) + stronghold_info[SH_PORTAL_ROOM].rngCount + i);
+    return nextFloat() > 0.9f; // 10% chance
 }
 
 static
 int getStrongholdPiecesInternal(Piece *list, uint8_t *data, int n, int mc,
-        uint64_t seed, int chunkX, int chunkZ, uint8_t *portalEyes)
+    uint64_t seed, int chunkX, int chunkZ)
 {
     StrongholdEnv env;
     Piece *p, *prev;
@@ -3596,8 +3845,6 @@ int getStrongholdPiecesInternal(Piece *list, uint8_t *data, int n, int mc,
     env.nmax = n;
     env.typlast = -1;
     env.typcur = -1;
-    env.seed = seed;
-    env.eyes = portalEyes;
 
     setPopulationSeed(seed, chunkX, chunkZ);
     next(); // burn one call
@@ -3635,6 +3882,29 @@ int getStrongholdPiecesInternal(Piece *list, uint8_t *data, int n, int mc,
         extendStrongholdPiece(&env, p);
     }
 
+    // 1.20.71+ forceAddPortalRoom()
+    if (mc >= MC_1_21 && env.count >= 2)
+    {
+        for (i = 0; i < env.count; i++)
+            if (list[i].type == SH_PORTAL_ROOM)
+                break;
+        if (i == env.count && list[env.count - 2].bb.minY >= 11)
+        {
+            Piece *rm = list + env.count - 1;  // removed piece, gives the orientation
+            BB b = list[env.count - 2].bb;     // attach to the new last piece
+            int cx = (b.minX + b.maxX)/2;
+            int cz = (b.minZ + b.maxZ)/2;
+            int x = rm->rot == 1 ? b.maxX : rm->rot == 3 ? b.minX : cx + (rm->rot == 2 ? 1 : -1);
+            int z = rm->rot == 2 ? b.maxZ : rm->rot == 0 ? b.minZ : cz + (rm->rot == 1 ? 1 : -1);
+            // create portal room
+            rm->bb = orientedBB3(x, b.minY + 1, z, -4, -1, 0, 11, 8, 16, rm->rot);
+            rm->name = stronghold_info[SH_PORTAL_ROOM].name;
+            rm->type = SH_PORTAL_ROOM;
+            rm->depth = list[env.count - 2].depth;
+            env.data[env.count - 1] = 0;
+        }
+    }
+
     moveBelowSeaLevel(list, env.count, 63, mc >= MC_1_18 ? -64 : 0, mc >= MC_1_18 ? 10 : 5);
 
     for (i = 0; i < env.count; i++)
@@ -3646,51 +3916,110 @@ int getStrongholdPiecesInternal(Piece *list, uint8_t *data, int n, int mc,
 
 int getStrongholdPieces(Piece *list, int n, int mc, uint64_t seed, int chunkX, int chunkZ)
 {
-    return getStrongholdPiecesInternal(list, NULL, n, mc, seed, chunkX, chunkZ, NULL);
+    return getStrongholdPiecesInternal(list, NULL, n, mc, seed, chunkX, chunkZ);
 }
 
 int getStrongholdLayout(StrongholdLayout *sh, int mc, uint64_t seed, int chunkX, int chunkZ)
 {
     sh->seed = seed;
     sh->count = getStrongholdPiecesInternal(sh->pieces, sh->data, SH_PIECES_MAX,
-            mc, seed, chunkX, chunkZ, NULL);
+            mc, seed, chunkX, chunkZ);
     return sh->count;
 }
 
 int getStrongholdPortalFrames(StrongholdPortalFrame *frames, const StrongholdLayout *sh)
 {
-    StrongholdEnv env;
-    uint8_t eyes[12] = {0};
-    const Piece *portal = NULL;
-    int i;
-
-    for (i = 0; i < sh->count; i++)
-    {
-        if (sh->pieces[i].type == SH_PORTAL_ROOM)
-        {
-            portal = sh->pieces + i;
-            break;
-        }
-    }
+    const Piece *portal = getPortalRoom(sh);
     if (portal == NULL)
         return 0;
 
-    memset(&env, 0, sizeof(env));
-    env.list = (Piece *) sh->pieces;
-    env.data = (uint8_t *) sh->data;
-    env.count = sh->count;
-    env.seed = sh->seed;
-    env.eyes = eyes;
-    setPortalFrameEyes(&env, portal);
+    MTRngState saved;
+    mt_get_state(&saved);
     setPortalFramePos(frames, portal);
-    for (i = 0; i < 12; i++)
+    for (int i = 0; i < 12; i++)
     {
         frames[i].frameId = i;
-        frames[i].hasEye = eyes[i];
+        frames[i].hasEye = portalFrameEye(sh, portal, frames[i].pos, i);
     }
+    mt_set_state(&saved);
     return 12;
 }
 
+/* Collects the pieces of every village that could reach the block area
+ * [x0,x1] x [z0,z1]. Villages reach about 100 blocks from their start.
+ * Returns the number of pieces, *out must be freed by the caller
+ */
+static int getVillagePiecesNear(Piece **out, Generator *g, uint64_t seed,
+        int x0, int z0, int x1, int z1)
+{
+    StructureConfig sc;
+    *out = NULL;
+    if (!getStructureConfig(Village, g->mc, &sc))
+        return 0;
+    const int reach = 128;
+    int bs = sc.regionSize * 16;
+    int rx0 = floordiv(x0 - reach, bs), rx1 = floordiv(x1 + reach, bs);
+    int rz0 = floordiv(z0 - reach, bs), rz1 = floordiv(z1 + reach, bs);
+    int cap = 4 * VILLAGE_PIECES_MAX, nv = 0, rx, rz;
+    Piece *vp = (Piece *) malloc(cap * sizeof(Piece));
+    if (vp == NULL)
+        return 0;
+    for (rx = rx0; rx <= rx1; rx++)
+    {
+        for (rz = rz0; rz <= rz1; rz++)
+        {
+            Pos p;
+            if (!getStructurePos(Village, g->mc, seed, rx, rz, &p))
+                continue;
+            if (abs(p.x - (x0 + x1) / 2) > reach + 32 || abs(p.z - (z0 + z1) / 2) > reach + 32)
+                continue;
+            int id = isViableStructurePos(Village, g, p.x, p.z, 0);
+            if (!id || nv + VILLAGE_PIECES_MAX > cap)
+                continue;
+            nv += getVillagePieces(vp + nv, VILLAGE_PIECES_MAX, g->mc, seed, p.x >> 4, p.z >> 4, id);
+        }
+    }
+    *out = vp;
+    return nv;
+}
+
+// whether a village piece reaches into the chunk
+static int villageInChunk(const Piece *vp, int nv, int cx, int cz)
+{
+    BB c = bb3(cx*16, 0, cz*16, cx*16+15, 0, cz*16+15);
+    for (int j = 0; j < nv; j++)
+        if (overlapXZ(&vp[j].bb, &c))
+            return 1;
+    return 0;
+}
+
+int getStrongholdPortalFramesG(StrongholdPortalFrame *frames,
+        const StrongholdLayout *sh, Generator *g)
+{
+    int n = getStrongholdPortalFrames(frames, sh);
+    if (n == 0 || g == NULL || g->mc >= MC_26_50 || g->mc < MC_1_14)
+        return n;
+
+    int x0 = INT_MAX, z0 = INT_MAX, x1 = INT_MIN, z1 = INT_MIN;
+    int i;
+    for (i = 0; i < n; i++)
+    {
+        if (frames[i].pos.x < x0) x0 = frames[i].pos.x;
+        if (frames[i].pos.x > x1) x1 = frames[i].pos.x;
+        if (frames[i].pos.z < z0) z0 = frames[i].pos.z;
+        if (frames[i].pos.z > z1) z1 = frames[i].pos.z;
+    }
+    Piece *vp;
+    int nv = getVillagePiecesNear(&vp, g, sh->seed, x0, z0, x1, z1);
+    for (i = 0; i < n; i++)
+    {
+        int cx = floordiv(frames[i].pos.x, 16), cz = floordiv(frames[i].pos.z, 16);
+        if (villageInChunk(vp, nv, cx, cz))
+            frames[i].hasEye = -1; // unknown: depends on the chunk generation order
+    }
+    free(vp);
+    return n;
+}
 
 static const struct
 {
@@ -3743,6 +4072,8 @@ Piece *addFortressPiece(PieceEnv *env, int typ, int x, int y, int z, int depth, 
         b1.x += d0.z;       b1.z += d0.x+d1.x;
         break;
     }
+    if (*env->n >= env->nmax)
+        return NULL;
     Piece *p = env->list + *env->n;
     p->name = fortress_info[typ].name;
     p->pos = pos;
@@ -4380,36 +4711,39 @@ int getMineshaftPieces(Piece *list, int n, int mc, uint64_t seed, int chunkX, in
 //==============================================================================
 
 enum {
-    AIR               = 0,
-    SOLID             = 1,
-    COBBLESTONE       = SOLID,
-    MOSSY_COBBLESTONE = SOLID,
-    CHEST             = SOLID,
-    SPAWNER           = SOLID,
+    DUNGEON_AIR,
+    DUNGEON_SOLID
 };
 
-static int dungeonCachedSolid(const BiomeNoise *bn, const TerrainNoise *tn,
-        const TerrainShaper *ts, const CaveNoise *cn,
-        TerrainCache *tc,
-        SparseCell *ws, int wscap, int originX, int originZ,
-        int x, int y, int z)
+typedef struct
 {
-    int64_t key = packPosKey(x, y, z, originX, originZ);
-    int val;
-    if (sparseFind(ws, wscap, key, &val))
-        return val == SOLID;
+    const BiomeNoise    *bn;
+    const TerrainNoise  *tn;
+    const TerrainShaper *ts;
+    const CaveNoise     *cn;
+    TerrainCache        *tc;
+    SparseCell *cells; // blocks changed by earlier dungeons in the chunk
+    int originX, originZ;
+} DungeonEnv;
 
-    int solid = isSolidCached(bn, tn, ts, cn, tc, x, y, z);
-
-    val = solid ? SOLID : AIR;
-    sparseSet(ws, wscap, key, val);
-    return val == SOLID;
+static void dungeonSet(DungeonEnv *env, int x, int y, int z, int val)
+{
+    sparseSet(env->cells, DUNGEON_CAP, packPosKey(x, y, z, env->originX, env->originZ), val);
 }
 
-static int dungeonPlace(const BiomeNoise *bn, const TerrainNoise *tn,
-        const TerrainShaper *ts, const CaveNoise *cn, TerrainCache *tc,
-        SparseCell *ws, int wscap, int originX, int originZ,
-        int ox, int oy, int oz, DungeonData *out, int *n, int nout)
+static int dungeonSolid(DungeonEnv *env, int x, int y, int z)
+{
+    int64_t key = packPosKey(x, y, z, env->originX, env->originZ);
+    int val;
+    if (!sparseFind(env->cells, DUNGEON_CAP, key, &val))
+    {
+        val = isSolidCached(env->bn, env->tn, env->ts, env->cn, env->tc, x, y, z) ? DUNGEON_SOLID : DUNGEON_AIR;
+        sparseSet(env->cells, DUNGEON_CAP, key, val);
+    }
+    return val == DUNGEON_SOLID;
+}
+
+static int dungeonPlace(DungeonEnv *env, int ox, int oy, int oz, DungeonData *out)
 {
     int xr = nextInt(2) + 2;
     int zr = nextInt(2) + 2;
@@ -4420,15 +4754,11 @@ static int dungeonPlace(const BiomeNoise *bn, const TerrainNoise *tn,
     int minZ = -zr - 1;
     int maxZ =  zr + 1;
 
-    // validate floor and ceiling
-    int floorY   = oy + minY;
-    int ceilingY = oy + maxY;
     for (int dx = minX; dx <= maxX; dx++)
     for (int dz = minZ; dz <= maxZ; dz++)
     {
-        if (!dungeonCachedSolid(bn,tn,ts,cn,tc, ws, wscap, originX, originZ, ox+dx, floorY, oz+dz))
-            return 0;
-        if (!dungeonCachedSolid(bn,tn,ts,cn,tc, ws, wscap, originX, originZ, ox+dx, ceilingY, oz+dz))
+        if (!dungeonSolid(env, ox+dx, oy+minY, oz+dz) ||
+            !dungeonSolid(env, ox+dx, oy+maxY, oz+dz))
             return 0;
     }
 
@@ -4439,16 +4769,10 @@ static int dungeonPlace(const BiomeNoise *bn, const TerrainNoise *tn,
     {
         if (dx != minX && dx != maxX && dz != minZ && dz != maxZ)
             continue;
-
-        int hx = ox + dx;
-        int hz = oz + dz;
-        if (!dungeonCachedSolid(bn,tn,ts,cn,tc, ws, wscap, originX, originZ, hx, oy,   hz) &&
-            !dungeonCachedSolid(bn,tn,ts,cn,tc, ws, wscap, originX, originZ, hx, oy+1, hz))
-        {
-            holeCount++;
-            if (holeCount > 5)
-                return 0;
-        }
+        if (!dungeonSolid(env, ox+dx, oy,   oz+dz) &&
+            !dungeonSolid(env, ox+dx, oy+1, oz+dz) &&
+            ++holeCount > 5)
+            return 0;
     }
 
     if (holeCount < 1)
@@ -4456,31 +4780,20 @@ static int dungeonPlace(const BiomeNoise *bn, const TerrainNoise *tn,
 
     // build walls
     for (int dx = minX; dx <= maxX; dx++)
-    for (int dy = minY; dy <= maxY; dy++)
+    for (int dy = maxY-1; dy >= minY; dy--)
     for (int dz = minZ; dz <= maxZ; dz++)
     {
         int wx = ox+dx, wy = oy+dy, wz = oz+dz;
-        int64_t key = packPosKey(wx, wy, wz, originX, originZ);
-
-        if (dx == minX || dy == minY || dz == minZ ||
-            dx == maxX || dy == maxY || dz == maxZ)
-        {
-            if (!dungeonCachedSolid(bn,tn,ts,cn,tc, ws, wscap, originX, originZ, wx, wy-1, wz))
-                sparseSet(ws, wscap, key, AIR);
-            else
-            {
-                if (dy == -1 && nextInt(4) != 0) 
-                    sparseSet(ws, wscap, key, MOSSY_COBBLESTONE);
-                else 
-                    sparseSet(ws, wscap, key, COBBLESTONE);
-            }
-        }
-        else
-        {
-            sparseSet(ws, wscap, key, AIR);
-        }
+        if (dx != minX && dx != maxX && dy != minY && dz != minZ && dz != maxZ)
+            dungeonSet(env, wx, wy, wz, DUNGEON_AIR);
+        else if (wy - 1 >= -64 && !dungeonSolid(env, wx, wy - 1, wz))
+            dungeonSet(env, wx, wy, wz, DUNGEON_AIR);
+        else if (dungeonSolid(env, wx, wy, wz) && dy == minY)
+            nextInt(4); // mossy
     }
 
+    // 2 chests, 3 tries each, on a floor block with exactly one wall beside it
+    static const int sx[4] = {-1, 1, 0, 0}, sz[4] = {0, 0, 1, -1};
     // place chests
     int xsize = xr * 2 + 1;
     int zsize = zr * 2 + 1;
@@ -4489,91 +4802,30 @@ static int dungeonPlace(const BiomeNoise *bn, const TerrainNoise *tn,
     {
         // z -> x in bedrock
         int zc = oz + nextInt(zsize) - zr;
-        int yc = oy;
         int xc = ox + nextInt(xsize) - xr;
-        int64_t ckey = packPosKey(xc, yc, zc, originX, originZ);
-
-        int val;
-        sparseFind(ws, wscap, ckey, &val);
-        if (val == AIR)
-        {
-            static const int ddx[] = {-1, 1, 0, 0};
-            static const int ddz[] = { 0, 0, 1,-1};
-            int wallCount = 0;
-            int ok = 1;
-            for (int k = 0; k < 4; k++)
-            {
-                int64_t nk = packPosKey(xc+ddx[k], yc, zc+ddz[k], originX, originZ);
-                sparseFind(ws, wscap, nk, &val);
-                if (val == SOLID)
-                    wallCount++;
-                // early exit
-                if (wallCount > 1) {
-                    ok = 0;
-                    break;
-                }
-            }
-            if (ok && wallCount == 1)
-            {
-                //printf("chest %d %d %d\n", xc, yc, zc);
-                sparseSet(ws, wscap, ckey, CHEST);
-                next(); // loot seed
-                out[*n].chests[i].x = xc;
-                out[*n].chests[i].y = yc;
-                out[*n].chests[i].z = zc;
-                break;
-            }
-        }
+        if (dungeonSolid(env, xc, oy, zc))
+            continue;
+        int walls = 0;
+        for (int k = 0; k < 4 && walls <= 1; k++)
+            walls += dungeonSolid(env, xc + sx[k], oy, zc + sz[k]);
+        if (walls != 1)
+            continue;
+        dungeonSet(env, xc, oy, zc, DUNGEON_SOLID);
+        next(); // loot seed
+        if (out)
+            out->chests[i] = (Pos3){xc, oy, zc};
+        break;
     }
 
-    // place spawner + pick mob type
-    sparseSet(ws, wscap, packPosKey(ox, oy, oz, originX, originZ), SPAWNER);
-    int type = DUNGEON_ZOMBIE; // default
-    switch (nextInt(4))
+    dungeonSet(env, ox, oy, oz, DUNGEON_SOLID);
+    static const int mobs[4] = { DUNGEON_SKELETON, DUNGEON_ZOMBIE, DUNGEON_ZOMBIE, DUNGEON_SPIDER };
+    int mob = mobs[nextInt(4)];
+    if (out)
     {
-        case 0: type = DUNGEON_SKELETON; break;
-        case 1: type = DUNGEON_ZOMBIE;   break;
-        case 2: type = DUNGEON_ZOMBIE;   break;
-        case 3: type = DUNGEON_SPIDER;   break;
+        out->pos = (Pos3){ox, oy, oz};
+        out->mobType = mob;
     }
-
-    if (out && *n < nout)
-    {
-        out[*n].pos.x = ox;
-        out[*n].pos.y = oy;
-        out[*n].pos.z = oz;
-        out[*n].mobType = type;
-    }
-    (*n)++;
     return 1;
-}
-
-// skip nearby dungeons
-// they generate after mineshafts,
-// causing RNG shifts within the same chunk.
-static int mineshaftNearby(int mc, uint64_t seed, int chunkX, int chunkZ)
-{
-    const int x0 = chunkX * 16;
-    const int z0 = chunkZ * 16;
-    const int x1 = x0 + 15;
-    const int z1 = z0 + 15;
-    const int radius = 5;
-    Piece pieces[512];
-
-    for (int cz = chunkZ - radius; cz <= chunkZ + radius; cz++)
-    {
-        for (int cx = chunkX - radius; cx <= chunkX + radius; cx++)
-        {
-            int n = getMineshaftPieces(pieces, sizeof(pieces)/sizeof(pieces[0]), mc, seed, cx, cz, MINESHAFT_NORMAL);
-            for (int i = 0; i < n; i++)
-            {
-                if (pieces[i].bb.maxX >= x0 && pieces[i].bb.minX <= x1 &&
-                    pieces[i].bb.maxZ >= z0 && pieces[i].bb.minZ <= z1)
-                    return 1;
-            }
-        }
-    }
-    return 0;
 }
 
 int getDungeons(
@@ -4585,48 +4837,41 @@ int getDungeons(
     int chunkX, int chunkZ,
     DungeonData *out, int nout)
 {
-    if (mineshaftNearby(mc, seed, chunkX, chunkZ) || 
-        mc < MC_1_18) // not supported
+    if (mc < MC_1_18) // not supported
         return 0;
 
-    SparseCell *ws = (SparseCell*) calloc(DUNGEON_CAP, sizeof(SparseCell));
-    if (!ws)
-        return 0;
-    TerrainCache *tc = (TerrainCache*) malloc(sizeof(TerrainCache));
-    if (!tc)
+    DungeonEnv env = { bn, tn, ts, cn, NULL, NULL, chunkX * 16 + 8, chunkZ * 16 + 8 };
+    env.cells = (SparseCell *) calloc(DUNGEON_CAP, sizeof(SparseCell));
+    env.tc = (TerrainCache *) malloc(sizeof(TerrainCache));
+    if (env.cells == NULL || env.tc == NULL)
     {
-        free(ws);
+        free(env.cells);
+        free(env.tc);
         return 0;
     }
-    initTerrainCache(tc);
-
-    int originX = chunkX * 16 + 8;
-    int originZ = chunkZ * 16 + 8;
-    int n = 0;
+    initTerrainCache(env.tc);
 
     setPopulationSeed(seed, chunkX, chunkZ);
-    if (mc >= MC_26_20) // actually 1.21.120+
-        skipNextN(1);
-
-    // below dungeon
-    for (int idx = 0; idx < 4; idx++)
+    if (mc >= MC_26_20 && nextInt(8) == 0) // the lava lake roll
     {
-        int x = nextInt(16) + originX;
-        int y = nextIntRange(-58, 0); // -58 ~ -1
-        int z = nextInt(16) + originZ;
-        dungeonPlace(bn,tn,ts,cn, tc, ws, DUNGEON_CAP, originX, originZ, x, y, z, out, &n, nout);
+        nextInt(9);
+        int y = nextInt(nextInt(120) + 8);
+        nextInt(9);
+        if (y > 63)
+            nextInt(10);
     }
-    // above dungeon
-    for (int idx = 0; idx < 10; idx++)
+    // 4 attempts below y = 0, then 10 above
+    int n = 0;
+    for (int i = 0; i < 10+4; i++)
     {
-        int x = nextInt(16) + originX;
-        int y = nextIntRange(0, 320); // 0 ~ 319
-        int z = nextInt(16) + originZ;
-        dungeonPlace(bn,tn,ts,cn, tc, ws, DUNGEON_CAP, originX, originZ, x, y, z, out, &n, nout);
+        int x = nextInt(16) + env.originX;
+        int y = i < 4 ? nextIntRange(-58, 0) : nextIntRange(0, 320);
+        int z = nextInt(16) + env.originZ;
+        n += dungeonPlace(&env, x, y, z, out && n < nout ? out + n : NULL);
     }
 
-    free(ws);
-    free(tc);
+    free(env.cells);
+    free(env.tc);
     return n;
 }
 
@@ -4637,7 +4882,7 @@ int getDungeons(
 static const struct
 {
     Pos3 size;
-    const char* name;
+    const char *name;
 }
 outpost_info[] = {
     // vanilla\structures\pillageroutpost
@@ -4762,442 +5007,380 @@ uint64_t getHouseList(int *out, uint64_t seed, int chunkX, int chunkZ)
     return 1;
 }
 
-typedef struct {
-    int vpType;
-    int facing;
-    int depth;
-    BB bb;
-    int length;
-} PV_Piece;
+enum { PV_WEIGHT_TYPES = 9 };
 
-#define PV_MAX_PIECES 512
-#define PV_MAX_PENDING 512
-
-typedef struct { PV_Piece arr[PV_MAX_PIECES]; int n; } PV_PieceArr;
-typedef struct { int idx[PV_MAX_PENDING]; int n; } PV_PendingList;
-
-static void pv_pa_add(PV_PieceArr *pa, const PV_Piece *p)
-{ if(pa->n < PV_MAX_PIECES) pa->arr[pa->n++] = *p; }
-
-static void pv_pl_add(PV_PendingList *pl, int i)
-{ if(pl->n < PV_MAX_PENDING) pl->idx[pl->n++] = i; }
-
-static int pv_pl_remove(PV_PendingList *pl, int pos)
+static const struct
 {
-    int v = pl->idx[pos];
-    for(int k=pos; k<pl->n-1; k++) pl->idx[k]=pl->idx[k+1];
-    pl->n--;
-    return v;
+    int type, weight;
 }
-
-#define PV_NUM_PW 9
-typedef struct { int vpType; int weight; int spawned; int limit; } PV_PW;
-typedef struct { PV_PW pw[PV_NUM_PW]; int n; } PV_PWList;
-
-static const int PV_PW_VPTYPES[PV_NUM_PW] = {
-    VP_HOUSE4G, VP_CHURCH, VP_HOUSE1, VP_WOODHUT, VP_HALL,
-    VP_FIELD1, VP_FIELD2, VP_HOUSE2, VP_HOUSE3
+pre_village_weights[PV_WEIGHT_TYPES] = {
+    {VP_HOUSE4G,  4}, {VP_CHURCH, 20}, {VP_HOUSE1, 20},
+    {VP_WOODHUT,  3}, {VP_HALL,   15}, {VP_FIELD1,  3},
+    {VP_FIELD2,   3}, {VP_HOUSE2, 15}, {VP_HOUSE3,  8},
 };
-static const int PV_PW_WEIGHTS[PV_NUM_PW] = { 4,20,20,3,15,3,3,15,8 };
 
-static void pv_pw_init(PV_PWList *pwl, const int limits[PV_NUM_PW])
+static const struct
 {
-    pwl->n = 0;
-    for (int i=0; i<PV_NUM_PW; i++)
-    {
-        if (limits[i]>0)
-        {
-            pwl->pw[pwl->n].vpType = PV_PW_VPTYPES[i];
-            pwl->pw[pwl->n].weight = PV_PW_WEIGHTS[i];
-            pwl->pw[pwl->n].spawned = 0;
-            pwl->pw[pwl->n].limit = limits[i];
-            pwl->n++;
-        }
-    }
+    int sx, sy, sz;
+    int draws;      // draws after a successful placement
+    int anyHeight;  // no minY check
 }
+pre_village_buildings[] = {
+    [VP_HOUSE4G] = { 5,  6,  5, 1, 1},
+    [VP_CHURCH]  = { 5, 12,  9, 0, 0},
+    [VP_HOUSE1]  = { 9,  9,  6, 0, 0},
+    [VP_WOODHUT] = { 4,  6,  5, 2, 0},
+    [VP_HALL]    = { 9,  7, 11, 0, 0},
+    [VP_FIELD1]  = {13,  4,  9, 4, 0},
+    [VP_FIELD2]  = { 7,  4,  9, 2, 0},
+    [VP_HOUSE2]  = {10,  6,  7, 0, 0},
+    [VP_HOUSE3]  = { 9,  7, 12, 0, 0},
+};
 
-static int pv_pw_total(const PV_PWList *pwl)
+typedef struct
 {
-    int total=0, hasAvail=0;
-    for (int i=0; i<pwl->n; i++)
+    int type, facing, depth, length;
+    BB bb;
+} PreVillagePiece;
+
+typedef struct
+{
+    PreVillagePiece pieces[VP_PIECES_MAX];
+    int count;
+    int roads[VP_PIECES_MAX];
+    int nroads;
+    int houses;
+    struct { int type, weight, spawned, limit; } weights[PV_WEIGHT_TYPES];
+    int nweights;
+    int last; // weight entry of the last placed building, -1 if none
+} PreVillageEnv;
+
+static int preVillageCollides(const PreVillageEnv *env, const BB *bb)
+{
+    for (int i = 0; i < env->count; i++)
     {
-        if (pwl->pw[i].spawned < pwl->pw[i].limit) hasAvail=1;
-        total += pwl->pw[i].weight;
-    }
-    return hasAvail ? total : -1;
-}
-
-static void pv_pw_remove(PV_PWList *pwl, int wi)
-{
-    for (int m=wi; m<pwl->n-1; m++) pwl->pw[m]=pwl->pw[m+1];
-    pwl->n--;
-}
-
-typedef struct {
-    PV_PieceArr *pieces;
-    PV_PendingList pendingRoads;
-    PV_PendingList pendingHouses;
-    PV_PWList weights;
-    int lastPlacedPWIdx;
-    int terrainType;
-    BB startBB;
-} PV_VStart;
-
-static int pv_find_intersecting(const PV_PieceArr *pa, const BB *bb)
-{
-    for (int i=0; i<pa->n; i++)
-    {
-        if (intersects(&pa->arr[i].bb, bb))
-        {
-            return i;
-        }
-    }
-    return -1;
-}
-
-static int pv_path_find_box(PV_VStart *vs, int x,int y,int z,int facing, BB *out)
-{
-    int initLen = 7 * nextIntRange(3,6);
-    for (int i=initLen; i>=7; i-=7)
-    {
-        BB bb = orientedBB3(x,y,z, 0,0,0, 3,3,i, toRot(facing));
-        if (pv_find_intersecting(vs->pieces, &bb) < 0)
-        {
-            *out=bb;
+        if (intersects(&env->pieces[i].bb, bb))
             return 1;
-        }
     }
     return 0;
 }
 
-static int pv_torch_find_box(PV_VStart *vs, int x,int y,int z,int facing, BB *out)
+static int preVillageFarFromStart(const PreVillageEnv *env, int x, int z)
 {
-    BB bb = orientedBB3(x,y,z, 0,0,0, 3,4,2, toRot(facing));
-    if (pv_find_intersecting(vs->pieces, &bb) < 0)
+    const BB *s = &env->pieces[0].bb;
+    return abs(x - s->minX) > 112 || abs(z - s->minZ) > 112;
+}
+
+static int addPreVillagePiece(PreVillageEnv *env, int type, int facing, int depth, BB bb)
+{
+    if (env->count >= VP_PIECES_MAX)
+        return -1;
+    PreVillagePiece *p = &env->pieces[env->count];
+    p->type = type;
+    p->facing = facing;
+    p->depth = depth;
+    p->bb = bb;
+    p->length = 0;
+    return env->count++;
+}
+
+static void addPreVillageRoad(PreVillageEnv *env, int x, int y, int z, int facing, int depth)
+{
+    if (depth > 3 || preVillageFarFromStart(env, x, z))
+        return;
+
+    int len = 7 * nextIntRange(3, 6);
+    for (; len >= 7; len -= 7)
     {
-        *out=bb;
-        return 1;
+        BB bb = orientedBB3(x, y, z, 0, 0, 0, 3, 3, len, toRot(facing));
+        if (preVillageCollides(env, &bb))
+            continue;
+        if (bb.minY <= 10) return;
+        int i = addPreVillagePiece(env, VP_PATH, facing, depth, bb);
+        if (i < 0) return;
+        env->pieces[i].length = xSize(&bb) > zSize(&bb) ? xSize(&bb) : zSize(&bb);
+        if (env->nroads < VP_PIECES_MAX)
+            env->roads[env->nroads++] = i;
+        return;
     }
-    return 0;
 }
 
-static int pv_gen_add_road(PV_VStart *vs, int x,int y,int z,int facing,int depth)
+static int addPreVillageBuilding(PreVillageEnv *env, int type, int x, int y, int z, int facing, int depth)
 {
-    if (depth > 3 + vs->terrainType) return -1;
-    int dx = x - vs->startBB.minX; if(dx<0) dx=-dx;
-    int dz = z - vs->startBB.minZ; if(dz<0) dz=-dz;
-    if (dx>112 || dz>112) return -1;
-
-    BB bb;
-    if (!pv_path_find_box(vs,x,y,z,facing,&bb)) return -1;
-    if (bb.minY <= 10) return -1;
-
-    PV_Piece p;
-    p.vpType = VP_PATH; p.facing = facing; p.depth = depth; p.bb = bb;
-    int xs = xSize(&bb);
-    int zs = zSize(&bb);
-    p.length = xs > zs ? xs : zs;
-    int idx = vs->pieces->n;
-    pv_pa_add(vs->pieces, &p);
-    pv_pl_add(&vs->pendingRoads, idx);
-    return idx;
+    BB bb = orientedBB3(x, y, z, 0, 0, 0,
+        pre_village_buildings[type].sx,
+        pre_village_buildings[type].sy,
+        pre_village_buildings[type].sz,
+        toRot(facing));
+    if ((!pre_village_buildings[type].anyHeight && bb.minY <= 10) || preVillageCollides(env, &bb))
+        return -1;
+    skipNextN(pre_village_buildings[type].draws);
+    return addPreVillagePiece(env, type, facing, depth, bb);
 }
 
-static int pv_create_building(PV_VStart *vs, int vpType,
-                               int x,int y,int z,int facing,int depth)
+static int pickPreVillageBuilding(PreVillageEnv *env, int x, int y, int z, int facing, int depth)
 {
-    BB bb;
-    switch(vpType)
+    int total = 0, avail = 0;
+    for (int i = 0; i < env->nweights; i++)
     {
-    case VP_HOUSE4G:
-        bb = orientedBB3(x,y,z, 0,0,0, 5,6,5, toRot(facing));
-        if (pv_find_intersecting(vs->pieces,&bb)>=0) return -1;
-        nextBoolean(); break;
-    case VP_CHURCH:
-        bb = orientedBB3(x,y,z, 0,0,0, 5,12,9, toRot(facing));
-        if (bb.minY<=10 || pv_find_intersecting(vs->pieces,&bb)>=0) return -1;
-        break;
-    case VP_HOUSE1:
-        bb = orientedBB3(x,y,z, 0,0,0, 9,9,6, toRot(facing));
-        if (bb.minY<=10 || pv_find_intersecting(vs->pieces,&bb)>=0) return -1;
-        break;
-    case VP_WOODHUT:
-        bb = orientedBB3(x,y,z, 0,0,0, 4,6,5, toRot(facing));
-        if (bb.minY<=10 || pv_find_intersecting(vs->pieces,&bb)>=0) return -1;
-        nextBoolean(); nextInt(3); break;
-    case VP_HALL:
-        bb = orientedBB3(x,y,z, 0,0,0, 9,7,11, toRot(facing));
-        if (bb.minY<=10 || pv_find_intersecting(vs->pieces,&bb)>=0) return -1;
-        break;
-    case VP_FIELD1:
-        bb = orientedBB3(x,y,z, 0,0,0, 13,4,9, toRot(facing));
-        if (bb.minY<=10 || pv_find_intersecting(vs->pieces,&bb)>=0) return -1;
-        nextInt(10); nextInt(10); nextInt(10); nextInt(10); break;
-    case VP_FIELD2:
-        bb = orientedBB3(x,y,z, 0,0,0, 7,4,9, toRot(facing));
-        if (bb.minY<=10 || pv_find_intersecting(vs->pieces,&bb)>=0) return -1;
-        nextInt(10); nextInt(10); break;
-    case VP_HOUSE2:
-        bb = orientedBB3(x,y,z, 0,0,0, 10,6,7, toRot(facing));
-        if (bb.minY<=10 || pv_find_intersecting(vs->pieces,&bb)>=0) return -1;
-        break;
-    case VP_HOUSE3:
-        bb = orientedBB3(x,y,z, 0,0,0, 9,7,12, toRot(facing));
-        if (bb.minY<=10 || pv_find_intersecting(vs->pieces,&bb)>=0) return -1;
-        break;
-    default: return -1;
+        total += env->weights[i].weight;
+        avail |= env->weights[i].spawned < env->weights[i].limit;
     }
-    PV_Piece p; p.vpType=vpType; p.facing=facing; p.depth=depth; p.bb=bb; p.length=0;
-    int idx = vs->pieces->n;
-    pv_pa_add(vs->pieces, &p);
-    return idx;
-}
-
-static int pv_gen_component(PV_VStart *vs, int x,int y,int z,int facing,int depth)
-{
-    int total = pv_pw_total(&vs->weights);
-    if (total<=0)
+    if (!avail || total <= 0)
         return -1;
     for (int attempt=0; attempt<5; attempt++)
     {
         int k = nextInt(total);
-        for (int wi=0; wi<vs->weights.n; wi++)
+        for (int i=0; i<env->nweights; i++)
         {
-            PV_PW *pw = &vs->weights.pw[wi];
-            k -= pw->weight;
+            // a failed placement falls through to the next entry
+            k -= env->weights[i].weight;
             if (k>=0)
                 continue;
-            int canSpawn = (pw->spawned < pw->limit);
-            int isLast = (wi == vs->lastPlacedPWIdx && vs->weights.n > 1);
-            if (!canSpawn || isLast)
+            if (env->weights[i].spawned >= env->weights[i].limit || (i == env->last && env->nweights > 1))
                 break;
-            int idx = pv_create_building(vs, pw->vpType, x, y, z, facing, depth);
+            int idx = addPreVillageBuilding(env, env->weights[i].type, x, y, z, facing, depth);
             if (idx<0)
                 continue;
-            pw->spawned++;
-            vs->lastPlacedPWIdx = wi;
-            if (pw->spawned >= pw->limit)
+
+            env->last = i;
+            if (++env->weights[i].spawned >= env->weights[i].limit)
             {
-                pv_pw_remove(&vs->weights, wi);
-                if (vs->lastPlacedPWIdx == wi)
-                {
-                    vs->lastPlacedPWIdx = -1;
-                }
-                else if (vs->lastPlacedPWIdx > wi)
-                {
-                    vs->lastPlacedPWIdx--;
-                }
+                env->nweights--;
+                memmove(&env->weights[i], &env->weights[i+1], (env->nweights - i) * sizeof(env->weights[0]));
+                env->last = -1;
             }
             return idx;
         }
     }
-    BB bb;
-    if (pv_torch_find_box(vs,x,y,z,facing,&bb))
-    {
-        PV_Piece p; p.vpType=VP_TORCH; p.facing=facing; p.depth=depth; p.bb=bb; p.length=0;
-        int idx = vs->pieces->n;
-        pv_pa_add(vs->pieces, &p);
-        return idx;
-    }
-    return -1;
+
+    BB bb = orientedBB3(x, y, z, 0, 0, 0, 3, 4, 2, toRot(facing));
+    if (preVillageCollides(env, &bb))
+        return -1;
+    return addPreVillagePiece(env, VP_TORCH, facing, depth, bb);
 }
 
-static int pv_gen_add_component(PV_VStart *vs, int x,int y,int z,int facing,int depth)
+static int addPreVillageComponent(PreVillageEnv *env, int x, int y, int z, int facing, int depth)
 {
-    if (depth>50)
+    if (depth>50 || preVillageFarFromStart(env, x, z))
         return -1;
-    int dx = x - vs->startBB.minX; if(dx<0) dx=-dx;
-    int dz = z - vs->startBB.minZ; if(dz<0) dz=-dz;
-    if (dx>112 || dz>112)
-        return -1;
-    int idx = pv_gen_component(vs,x,y,z,facing,depth+1);
+    int idx = pickPreVillageBuilding(env,x,y,z,facing,depth+1);
     if (idx>=0)
     {
-        pv_pl_add(&vs->pendingHouses, idx);
+        env->houses++;
     }
     return idx;
 }
 
-static int pv_get_next_nn(PV_VStart *vs, int pi, int yOff, int zOff)
+// a building beside the road at offset a (left: side 0, right: side 1)
+static int addPreVillageBeside(PreVillageEnv *env, int road, int side, int a)
 {
-    const PV_Piece *p = &vs->pieces->arr[pi];
-    switch (p->facing)
-    {
-    case FACING_NORTH:
-    case FACING_SOUTH:
-        return pv_gen_add_component(vs, p->bb.minX-1, p->bb.minY+yOff, p->bb.minZ+zOff, FACING_WEST, p->depth);
-    case FACING_WEST:
-    case FACING_EAST:
-        return pv_gen_add_component(vs, p->bb.minX+zOff, p->bb.minY+yOff, p->bb.minZ-1, FACING_NORTH, p->depth);
-    default: return -1;
-    }
+    const PreVillagePiece *p = &env->pieces[road];
+    const BB *b = &p->bb;
+    if (p->facing == FACING_NORTH || p->facing == FACING_SOUTH)
+        return addPreVillageComponent(env, side ? b->maxX + 1 : b->minX - 1, b->minY, b->minZ + a,
+            side ? FACING_EAST : FACING_WEST, p->depth);
+    return addPreVillageComponent(env, b->minX + a, b->minY, side ? b->maxZ + 1 : b->minZ - 1,
+        side ? FACING_SOUTH : FACING_NORTH, p->depth);
 }
 
-static int pv_get_next_pp(PV_VStart *vs, int pi, int yOff, int zOff)
+static void extendPreVillageRoad(PreVillageEnv *env, int road)
 {
-    const PV_Piece *p = &vs->pieces->arr[pi];
-    switch (p->facing)
-    {
-    case FACING_NORTH:
-    case FACING_SOUTH:
-        return pv_gen_add_component(vs, p->bb.maxX+1, p->bb.minY+yOff, p->bb.minZ+zOff, FACING_EAST, p->depth);
-    case FACING_WEST:
-    case FACING_EAST:
-        return pv_gen_add_component(vs, p->bb.minX+zOff, p->bb.minY+yOff, p->bb.maxZ+1, FACING_SOUTH, p->depth);
-    default: return -1;
-    }
-}
-
-static void pv_path_build(PV_VStart *vs, int pi)
-{
-    int length = vs->pieces->arr[pi].length;
-    int facing = vs->pieces->arr[pi].facing;
+    int length = env->pieces[road].length;
+    int facing = env->pieces[road].facing;
     int flag = 0;
-    for (int i=nextInt(5); i<length-8; i+=2+nextInt(5))
+    for (int side = 0; side < 2; side++)
     {
-        int idx = pv_get_next_nn(vs,pi,0,i);
-        if (idx>=0)
+        for (int i=nextInt(5); i<length-8; i+=2+nextInt(5))
         {
-            int xs=xSize(&vs->pieces->arr[idx].bb);
-            int zs=zSize(&vs->pieces->arr[idx].bb);
-            i += (xs>zs?xs:zs); flag=1;
+            int idx = addPreVillageBeside(env, road, side, i);
+            if (idx<0)
+                continue;
+            const BB *b = &env->pieces[idx].bb;
+            i += xSize(b) > zSize(b) ? xSize(b) : zSize(b); flag=1;
         }
     }
-    for (int j=nextInt(5); j<length-8; j+=2+nextInt(5))
+    for (int side = 0; side < 2; side++)
     {
-        int idx = pv_get_next_pp(vs,pi,0,j);
-        if (idx>=0)
-        {
-            int xs=xSize(&vs->pieces->arr[idx].bb);
-            int zs=zSize(&vs->pieces->arr[idx].bb);
-            j += (xs>zs?xs:zs); flag=1;
-        }
-    }
-    if (flag && nextInt(3)>0 && facing!=-1)
-    {
-        const BB *b = &vs->pieces->arr[pi].bb;
-        int dep = vs->pieces->arr[pi].depth;
+        if (!flag || nextInt(3) == 0)
+            continue;
+        const BB *b = &env->pieces[road].bb;
+        int x, z, f;
         switch (facing)
         {
         default:
-        case FACING_NORTH: pv_gen_add_road(vs,b->minX-1,b->minY,b->minZ+0,FACING_WEST, dep); break;
-        case FACING_SOUTH: pv_gen_add_road(vs,b->minX-1,b->minY,b->maxZ-2,FACING_WEST, dep); break;
-        case FACING_WEST:  pv_gen_add_road(vs,b->minX+0,b->minY,b->minZ-1,FACING_NORTH,dep); break;
-        case FACING_EAST:  pv_gen_add_road(vs,b->maxX-2,b->minY,b->minZ-1,FACING_NORTH,dep); break;
+        case FACING_NORTH: x = side ? b->maxX + 1 : b->minX - 1; z = b->minZ;     f = side ? FACING_EAST : FACING_WEST; break;
+        case FACING_SOUTH: x = side ? b->maxX + 1 : b->minX - 1; z = b->maxZ - 2; f = side ? FACING_EAST : FACING_WEST; break;
+        case FACING_WEST:  x = b->minX;     z = side ? b->maxZ + 1 : b->minZ - 1; f = side ? FACING_SOUTH : FACING_NORTH; break;
+        case FACING_EAST:  x = b->maxX - 2; z = side ? b->maxZ + 1 : b->minZ - 1; f = side ? FACING_SOUTH : FACING_NORTH; break;
         }
-    }
-    if (flag && nextInt(3)>0 && facing!=-1)
-    {
-        const BB *b = &vs->pieces->arr[pi].bb;
-        int dep = vs->pieces->arr[pi].depth;
-        switch (facing)
-        {
-        default:
-        case FACING_NORTH: pv_gen_add_road(vs,b->maxX+1,b->minY,b->minZ+0,FACING_EAST, dep); break;
-        case FACING_SOUTH: pv_gen_add_road(vs,b->maxX+1,b->minY,b->maxZ-2,FACING_EAST, dep); break;
-        case FACING_WEST:  pv_gen_add_road(vs,b->minX+0,b->minY,b->maxZ+1,FACING_SOUTH,dep); break;
-        case FACING_EAST:  pv_gen_add_road(vs,b->maxX-2,b->minY,b->maxZ+1,FACING_SOUTH,dep); break;
-        }
-    }
-}
-
-static void pv_well_build(PV_VStart *vs)
-{
-    const BB *b = &vs->pieces->arr[0].bb;
-    int dep = vs->pieces->arr[0].depth;
-    pv_gen_add_road(vs, b->minX-1, b->maxY-4, b->minZ+1, FACING_WEST,  dep);
-    pv_gen_add_road(vs, b->maxX+1, b->maxY-4, b->minZ+1, FACING_EAST,  dep);
-    pv_gen_add_road(vs, b->minX+1, b->maxY-4, b->minZ-1, FACING_NORTH, dep);
-    pv_gen_add_road(vs, b->minX+1, b->maxY-4, b->maxZ+1, FACING_SOUTH, dep);
-}
-
-static int pv_facing_to_rot(int facing)
-{
-    switch (facing)
-    {
-    case FACING_SOUTH: return 0;
-    case FACING_WEST:  return 1;
-    case FACING_NORTH: return 2;
-    case FACING_EAST:  return 3;
-    default: return 0;
+        addPreVillageRoad(env, x, b->minY, z, f, env->pieces[road].depth);
     }
 }
 
 int getPreVillagePieces(Piece *list, int n, uint64_t seed, int chunkX, int chunkZ)
 {
     static const int hf[4] = { FACING_SOUTH, FACING_WEST, FACING_NORTH, FACING_EAST };
-    int regX = chunkX < 0 ? chunkX - 40+1 : chunkX;
-    int regZ = chunkZ < 0 ? chunkZ - 40+1 : chunkZ;
+    static const int limits[PV_WEIGHT_TYPES][2] = {
+        {2, 5}, {0, 2}, {0, 3}, {2, 6}, {0, 3}, {1, 5}, {2, 5}, {0, 2}, {0, 4},
+    };
+    int regX = chunkX < 0 ? chunkX - 39 : chunkX;
+    int regZ = chunkZ < 0 ? chunkZ - 39 : chunkZ;
     setRegionSeed(seed, regX, regZ, 10387312);
-    next(); // separation x
-    next(); // separation z
+    skipNextN(2); // separation x, z
 
-    int limits[PV_NUM_PW];
-    limits[0] = nextIntRange(2,5); // HOUSE4G
-    limits[1] = nextIntRange(0,2); // CHURCH
-    limits[2] = nextIntRange(0,3); // HOUSE1
-    limits[3] = nextIntRange(2,6); // WOODHUT
-    limits[4] = nextIntRange(0,3); // HALL
-    limits[5] = nextIntRange(1,5); // FIELD1
-    limits[6] = nextIntRange(2,5); // FIELD2
-    limits[7] = nextIntRange(0,2); // HOUSE2
-    limits[8] = nextIntRange(0,4); // HOUSE3
-
-    PV_PieceArr pa;
-    memset(&pa, 0, sizeof(pa));
-
-    PV_VStart vs;
-    memset(&vs, 0, sizeof(vs));
-    vs.pieces          = &pa;
-    vs.lastPlacedPWIdx = -1;
-    vs.terrainType     = 0;
-    pv_pw_init(&vs.weights, limits);
-
-    int wx = (chunkX << 4) + 2;
-    int wz = (chunkZ << 4) + 2;
-
-    PV_Piece wellPiece;
-    wellPiece.vpType = VP_WELL;
-    wellPiece.facing = hf[nextInt(4)];
-    wellPiece.depth = 0;
-    wellPiece.bb = bb3(wx, 64, wz, wx+5, 78, wz+5);
-    wellPiece.length = 0;
-
-    vs.startBB = wellPiece.bb;
-    pv_pa_add(&pa, &wellPiece);
-    pv_well_build(&vs);
-
-    while (vs.pendingRoads.n > 0 || vs.pendingHouses.n > 0)
+    PreVillageEnv *env = (PreVillageEnv *) calloc(1, sizeof(PreVillageEnv));
+    if (env == NULL)
+        return 0;
+    for (int i = 0; i < PV_WEIGHT_TYPES; i++)
     {
-        if (vs.pendingRoads.n == 0)
+        int limit = nextIntRange(limits[i][0], limits[i][1]);
+        if (limit <= 0)
+            continue;
+        env->weights[env->nweights].type = pre_village_weights[i].type;
+        env->weights[env->nweights].weight = pre_village_weights[i].weight;
+        env->weights[env->nweights].limit = limit;
+        env->nweights++;
+    }
+    env->last = -1;
+
+    int x = (chunkX << 4) + 2;
+    int z = (chunkZ << 4) + 2;
+    addPreVillagePiece(env, VP_WELL, hf[nextInt(4)], 0, bb3(x, 64, z, x + 5, 78, z + 5));
+
+    const BB *b = &env->pieces[0].bb;
+    addPreVillageRoad(env, b->minX - 1, b->maxY - 4, b->minZ + 1, FACING_WEST,  0);
+    addPreVillageRoad(env, b->maxX + 1, b->maxY - 4, b->minZ + 1, FACING_EAST,  0);
+    addPreVillageRoad(env, b->minX + 1, b->maxY - 4, b->minZ - 1, FACING_NORTH, 0);
+    addPreVillageRoad(env, b->minX + 1, b->maxY - 4, b->maxZ + 1, FACING_SOUTH, 0);
+
+    // houses do not extend, so picking one only consumes a draw
+    while (env->nroads > 0 || env->houses > 0)
+    {
+        if (env->nroads == 0)
         {
-            int i = nextInt(vs.pendingHouses.n);
-            pv_pl_remove(&vs.pendingHouses, i);
+            nextInt(env->houses);
+            env->houses--;
+            continue;
         }
-        else
-        {
-            int j = nextInt(vs.pendingRoads.n);
-            int idx = pv_pl_remove(&vs.pendingRoads, j);
-            pv_path_build(&vs, idx);
-        }
+        int i = nextInt(env->nroads);
+        int road = env->roads[i];
+        env->nroads--;
+        memmove(&env->roads[i], &env->roads[i+1], (env->nroads - i) * sizeof(int));
+        extendPreVillageRoad(env, road);
     }
 
-    int count = pa.n < n ? pa.n : n;
+    int count = env->count < n ? env->count : n;
     for (int i = 0; i < count; i++)
     {
-        const PV_Piece *src = &pa.arr[i];
-        Piece *dst = &list[i];
-        dst->name  = NULL;
-        dst->pos.x = (src->bb.minX + src->bb.maxX) / 2;
-        dst->pos.y = src->bb.minY;
-        dst->pos.z = (src->bb.minZ + src->bb.maxZ) / 2;
-        dst->bb    = src->bb;
-        dst->rot   = (uint8_t)src->facing;
-        dst->depth = (int8_t)(src->depth < 127 ? src->depth : 127);
-        dst->type  = (int8_t)src->vpType;
-        dst->next  = NULL;
+        const PreVillagePiece *p = &env->pieces[i];
+        list[i].name  = NULL;
+        list[i].pos.x = (p->bb.minX + p->bb.maxX) / 2;
+        list[i].pos.y = p->bb.minY;
+        list[i].pos.z = (p->bb.minZ + p->bb.maxZ) / 2;
+        list[i].bb    = p->bb;
+        list[i].rot   = (uint8_t) p->facing;
+        list[i].depth = (int8_t) (p->depth < 127 ? p->depth : 127);
+        list[i].type  = (int8_t) p->type;
+        list[i].next  = NULL;
     }
+    free(env);
     return count;
+}
+
+//==============================================================================
+// Jigsaw Structure Generator (1.11+)
+//==============================================================================
+
+const char *getPieceFootprint(int structType, const Piece *p, int *sx, int *sz)
+{
+    const char *prefix;
+    switch (structType)
+    {
+    case Village: prefix = "village/"; break;
+    case End_City: prefix = "endcity/"; break;
+    case Ancient_City: prefix = "ancient_city/"; break;
+    default: return NULL;
+    }
+    if (!p->name)
+        return NULL;
+    char key[128];
+    snprintf(key, sizeof(key), "%s%s", prefix, p->name);
+    int lo = 0;
+    int hi = (int)(sizeof(g_template_footprints) / sizeof(g_template_footprints[0])) - 1;
+    while (lo <= hi)
+    {
+        int mid = (lo + hi) / 2;
+        int c = strcmp(key, g_template_footprints[mid].name);
+        if (c == 0)
+        {
+            *sx = g_template_footprints[mid].sx;
+            *sz = g_template_footprints[mid].sz;
+            return g_template_footprints[mid].mask;
+        }
+        if (c < 0) hi = mid - 1; else lo = mid + 1;
+    }
+    return NULL;
+}
+
+static int jigsawToPieces(Piece *list, int n, const JigsawPiece *jp, int cnt, const JigsawSet *set)
+{
+    if (cnt > n)
+        cnt = n;
+    for (int i = 0; i < cnt; i++)
+    {
+        const JigsawTemplate *t = &set->tmpls[jp[i].tmpl];
+        Pos3 p = jp[i].pos;
+        list[i].name  = t->name;
+        list[i].pos   = p;
+        list[i].bb    = t->sx ? jp[i].bb : bb3(p.x, p.y, p.z, p.x, p.y, p.z);
+        list[i].rot   = jp[i].rot;
+        list[i].depth = jp[i].depth;
+        list[i].type  = t->type;
+        list[i].next  = NULL;
+    }
+    return cnt;
+}
+
+int getVillagePieces(Piece *list, int n, int mc, uint64_t seed, int chunkX, int chunkZ, int biomeID)
+{
+    StructureVariant sv;
+    getVariant(&sv, Village, mc, seed, chunkX << 4, chunkZ << 4, biomeID);
+
+    const JigsawPool *center;
+    switch (sv.biome)
+    {
+    case plains:       center = &g_village_pools[VILLAGE_POOL_PLAINS_CENTER];  break;
+    case desert:       center = &g_village_pools[VILLAGE_POOL_DESERT_CENTER];  break;
+    case savanna:      center = &g_village_pools[VILLAGE_POOL_SAVANNA_CENTER]; break;
+    case taiga:        center = &g_village_pools[VILLAGE_POOL_TAIGA_CENTER];   break;
+    case snowy_plains: center = &g_village_pools[VILLAGE_POOL_SNOWY_CENTER];   break;
+    default: return 0;
+    }
+    int i = sv.start - (sv.biome != plains);
+    if (i < 0 || i >= center->entryCnt)
+        return 0;
+
+    JigsawPiece jp[VILLAGE_PIECES_MAX];
+    Pos3 pos = {(chunkX << 4), 0, (chunkZ << 4)};
+    int tmpl = g_village_entries[center->entry + i].tmpl;
+    int cnt = placeLegacyJigsaw(jp, VILLAGE_PIECES_MAX, &g_village, tmpl, pos, sv.rotation, sv.abandoned);
+    return jigsawToPieces(list, n, jp, cnt, &g_village);
+}
+
+int getAncientCityPieces(Piece *list, int n, int mc, uint64_t seed, int chunkX, int chunkZ)
+{
+    StructureVariant sv;
+    getVariant(&sv, Ancient_City, mc, seed, chunkX << 4, chunkZ << 4, -1);
+
+    const JigsawPool *center = &g_ancient_city_pools[AC_POOL_CITY_CENTER];
+    int tmpl = g_ancient_city_entries[center->entry + sv.start - 1].tmpl;
+    Pos3 a = jigsawAnchor(&g_ancient_city, tmpl, sv.rotation, AJ_CITY_ANCHOR);
+    Pos3 pos = {(chunkX << 4) - a.x, (sv.y - 1) - a.y, (chunkZ << 4) - a.z};
+
+    JigsawPiece jp[AC_PIECES_MAX];
+    int cnt = placeJigsaw(jp, AC_PIECES_MAX, &g_ancient_city, tmpl, pos, sv.rotation);
+    return jigsawToPieces(list, n, jp, cnt, &g_ancient_city);
 }
 
 //==============================================================================
@@ -5210,15 +5393,12 @@ int addTunnel(Piece *list, uint32_t tunnelSeed,
 {
     setSeed(tunnelSeed);
     int length = 112 - nextInt(28);
-    float wf[128]; // width factors
     for (int i = 0; i < 128; i++)
     {
-        float f = 1.0f;
         if (i == 0 || nextInt(3) == 0)
         {
-            f = nextFloat() * nextFloat() + 1.0f;
+            skipNextN(2); // width factor
         }
-        wf[i] = f * f;
     }
     double a = 0.0;
     double b = 0.0;
@@ -5249,10 +5429,12 @@ int addTunnel(Piece *list, uint32_t tunnelSeed,
 //==============================================================================
 #define CHORUS_BLOCKS_CAP 2048
 
+#define CHORUS_AREA 34 // plants of a chunk reach blocks 1..30, plus their neighbours
 
 typedef struct {
     SparseCell cells[CHORUS_BLOCKS_CAP];
     int originX, originZ;
+    float terrain[CHORUS_AREA*CHORUS_AREA]; // End surface heights from the chunk origin
 } Blocks;
 
 static
@@ -5263,8 +5445,26 @@ void setBlock(Blocks *m, int x, int y, int z) {
 static
 int isEmptyBlock(Blocks *blocks, int x, int y, int z) {
     int val;
+    int i = x - blocks->originX;
+    int j = z - blocks->originZ;
+    if (i >= 0 && i < CHORUS_AREA && 
+        j >= 0 && j < CHORUS_AREA &&
+        y <= (int) blocks->terrain[j*CHORUS_AREA + i])
+        return 0;
     return !sparseFind(blocks->cells, CHORUS_BLOCKS_CAP,
             packPosKey(x, y, z, blocks->originX, blocks->originZ), &val);
+}
+
+static
+int hasBlockInColumn(const Blocks *blocks, int x, int z)
+{
+    int64_t key = packPosKey(x, 0, z, blocks->originX, blocks->originZ);
+    for (int i = 0; i < CHORUS_BLOCKS_CAP; i++)
+    {
+        if (blocks->cells[i].used && (blocks->cells[i].key & ~(int64_t)0xffff) == key)
+            return 1;
+    }
+    return 0;
 }
 
 static
@@ -5339,42 +5539,108 @@ void generatePlant(Blocks *blocks, Pos3 pos)
     growTreeRecursive(blocks, pos, pos, 0);
 }
 
-int getEndGatewayPos(uint64_t seed, EndNoise en, SurfaceNoise sn, int chunkX, int chunkZ, Pos *pos)
+static int genEndChorus(Blocks *blocks, uint64_t seed, const EndNoise *en, const SurfaceNoise *sn,
+    int chunkX, int chunkZ)
 {
     if (chunkX*chunkX + chunkZ*chunkZ < 64*64)
         return 0;
     int id;
-    mapEndBiome(&en, &id, chunkX, chunkZ, 1, 1);
+    mapEndBiome(en, &id, chunkX, chunkZ, 1, 1);
     if (id != end_highlands)
         return 0;
-    Blocks blocks = {0};
-    blocks.originX = chunkX * 16;
-    blocks.originZ = chunkZ * 16;
+    memset(blocks, 0, sizeof(*blocks));
+    blocks->originX = chunkX * 16;
+    blocks->originZ = chunkZ * 16;
     setPopulationSeed(seed, chunkX, chunkZ);
-    if (en.mc >= MC_1_18)
-        skipNextN(1);
-    // need to skip chorus plant rng
+    skipEndPopulation(en->mc);
     int i = nextInt(5);// plant count
+    if (i > 0)
+        mapEndSurfaceHeight(blocks->terrain, en, sn, blocks->originX, blocks->originZ,
+            CHORUS_AREA, CHORUS_AREA, 1, 0);
     for (int j = 0; j < i; j++)
     {
         int bx = chunkX*16 + nextInt(16)+8;
         int bz = chunkZ*16 + nextInt(16)+8;
-        float by;
-        mapEndSurfaceHeight(&by, &en, &sn, bx, bz, 1, 1, 1, 0);
-        Pos3 p = {bx, (int)by + 1, bz};
-        generatePlant(&blocks, p);
+        int by = (int) blocks->terrain[(bz - blocks->originZ)*CHORUS_AREA + bx - blocks->originX];
+        // the top block (by the heightmap) has to be end stone
+        if (by <= 0 || hasBlockInColumn(blocks, bx, bz))
+            continue;
+        Pos3 p = {bx, by + 1, bz};
+        generatePlant(blocks, p);
     }
+    return 1;
+}
+
+// raises the heights in an area to the top of the chorus plants
+// (and keeps the lowest chorus block of each column in low[] if given, 0: none)
+static void mapEndChorusHeight(float *y, const EndNoise *en, const SurfaceNoise *sn, uint64_t seed,
+    int x, int z, int w, int h, int *low)
+{
+    Blocks *blocks = (Blocks*) malloc(sizeof(Blocks));
+    int cx, cz, k;
+    // plants start 8..23 into the chunk and branch out by up to 7
+    for (cz = floordiv(z - 31, 16); cz <= floordiv(z + h - 2, 16); cz++)
+    {
+        for (cx = floordiv(x - 31, 16); cx <= floordiv(x + w - 2, 16); cx++)
+        {
+            if (!genEndChorus(blocks, seed, en, sn, cx, cz))
+                continue;
+            for (k = 0; k < CHORUS_BLOCKS_CAP; k++)
+            {
+                if (!blocks->cells[k].used)
+                    continue;
+                int64_t key = blocks->cells[k].key;
+                int i = blocks->originX + (int16_t)(key >> 32) - x;
+                int j = blocks->originZ + (int16_t)(key >> 16) - z;
+                int by = (int16_t) key;
+                if (i < 0 || i >= w || j < 0 || j >= h)
+                    continue;
+                if (y[j*w + i] < by)
+                    y[j*w + i] = by;
+                if (low && (low[j*w + i] == 0 || low[j*w + i] > by))
+                    low[j*w + i] = by;
+            }
+        }
+    }
+    free(blocks);
+}
+
+int getEndGatewayPos3(uint64_t seed, const EndNoise *en, const SurfaceNoise *sn,
+    int chunkX, int chunkZ, Pos3 *pos)
+{
+    Blocks blocks;
+    if (!genEndChorus(&blocks, seed, en, sn, chunkX, chunkZ))
+        return 0;
     // end gateway generation
     if (nextInt(700) != 0) return 0;
     int bx = chunkX*16 + nextInt(16)+8;
     int bz = chunkZ*16 + nextInt(16)+8;
     float by;
-    mapEndSurfaceHeight(&by, &en, &sn, bx, bz, 1, 1, 1, 0);
-    if ((int)by <= 0)
-        return 0;// blockAbove->isAir() && blockBelow->isEndStone()
+    mapEndSurfaceHeight(&by, en, sn, bx, bz, 1, 1, 1, 0);
+    int top = (int) by;
+    if (top <= 0)
+        return 0;
+    // the heightmap includes the chorus plants of the chunk
+    for (int k = 0; k < CHORUS_BLOCKS_CAP; k++)
+    {
+        int64_t key = blocks.cells[k].key;
+        if (blocks.cells[k].used && blocks.originX + (int16_t)(key >> 32) == bx &&
+            blocks.originZ + (int16_t)(key >> 16) == bz && (int16_t) key > top)
+            top = (int16_t) key;
+    }
     pos->x = bx;
+    pos->y = top + 1 + 3 + nextInt(7);
     pos->z = bz;
-    //y = by + nextInt(7) + 3;
+    return 1;
+}
+
+int getEndGatewayPos(uint64_t seed, EndNoise en, SurfaceNoise sn, int chunkX, int chunkZ, Pos *pos)
+{
+    Pos3 p;
+    if (!getEndGatewayPos3(seed, &en, &sn, chunkX, chunkZ, &p))
+        return 0;
+    pos->x = p.x;
+    pos->z = p.z;
     return 1;
 }
 
@@ -5383,9 +5649,9 @@ void getFixedEndGateways(int mc, uint64_t seed, Pos src[20])
     (void) mc;
     static const Pos fixed[20] = {
         { 96,  0}, { 91, 29}, { 77, 56}, { 56, 77}, { 29, 91},
-        { -1, 96}, {-29, 91}, {-57, 77}, {-78, 56}, {-91, 29},
-        {-96, -1}, {-91,-29}, {-78,-57}, {-57,-78}, {-29,-92},
-        {  0,-96}, { 29,-91}, { 56,-78}, { 77,-57}, { 91,-29},
+        {  0, 96}, {-29, 91}, {-56, 77}, {-77, 56}, {-91, 29},
+        {-96,  0}, {-91,-29}, {-77,-56}, {-56,-77}, {-29,-91},
+        {  0,-96}, { 29,-91}, { 56,-77}, { 77,-56}, { 91,-29},
     };
 
     uint8_t order[] = {
@@ -5407,130 +5673,265 @@ void getFixedEndGateways(int mc, uint64_t seed, Pos src[20])
         src[i] = fixed[ order[19 - i] ];
 }
 
+static int endChunkHasTerrain(const EndNoise *en, const SurfaceNoise *sn, float px, float pz)
+{
+    float y[256];
+    // has the chunk at (px, pz) terrain (no islands) at y >= 16 (a section above the lowest)
+    // before 1.11 the block position is used as the chunk position (so blocks 16x as far are tested)
+    // and any block above y = 0 counts
+    int old = en->mc < MC_1_11, ymin = old ? 1 : 16;
+    int cx = (int)floorf(px), cz = (int)floorf(pz);
+    if (!old)
+    {
+        cx >>= 4;
+        cz >>= 4;
+    }
+    mapEndSurfaceHeight(y, en, sn, cx * 16, cz * 16, 16, 16, 1, ymin);
+    for (int i = 0; i < 256; i++) {
+        if (y[i] >= ymin)
+            return 1;
+    }
+    return 0;
+}
+
 Pos getLinkedGatewayChunk(const EndNoise *en, const SurfaceNoise *sn, uint64_t seed,
     Pos src, Pos *dst)
 {
-    double invr = 1.0 / sqrt(src.x * src.x + src.z * src.z);
-    double dx = src.x * invr;
-    double dz = src.z * invr;
-    double px = dx * 1024;
-    double pz = dz * 1024;
-    dx *= 16;
-    dz *= 16;
-
+    (void) seed;
+    float fx = (float)src.x;
+    float fz = (float)src.z;
+    float len = sqrtf(fx * fx + fz * fz);
+    float dx = 0;
+    float dz = 1;
+    if (len >= 1e-4f)
+    {
+        float inv = 1.0f / len;
+        dx = inv * fx;
+        dz = inv * fz;
+    }
+    float px = dx * 1024.0f;
+    float pz = dz * 1024.0f;
     int i;
-    Pos c;
-    c.x = (int) floor(px) >> 4;
-    c.z = (int) floor(pz) >> 4;
-
-    if (isEndChunkEmpty(en, sn, seed, c.x, c.z))
-    {   // look forward for the first non-empty chunk
-        for (i = 0; i < 15; i++)
-        {
-            int qx = (int) floor(px += dx) >> 4;
-            int qz = (int) floor(pz += dz) >> 4;
-            if (qx == c.x && qz == c.z)
-                continue;
-            c.x = qx;
-            c.z = qz;
-            if (!isEndChunkEmpty(en, sn, seed, c.x, c.z))
-                break;
-        }
+    for (i = 0; i < 16 && endChunkHasTerrain(en, sn, px, pz); i++)
+    {
+        px += dx * -16.0f;
+        pz += dz * -16.0f;
     }
-    else
-    {   // look backward for the last non-empty chunk
-        for (i = 0; i < 15; i++)
-        {
-            int qx = (int) floor(px -= dx) >> 4;
-            int qz = (int) floor(pz -= dz) >> 4;
-            if (isEndChunkEmpty(en, sn, seed, qx, qz))
-                break;
-            c.x = qx;
-            c.z = qz;
-        }
+    for (i = 0; i < 16; i++)
+    {
+        if (endChunkHasTerrain(en, sn, px, pz))
+            break;
+        px += dx * 16.0f;
+        pz += dz * 16.0f;
     }
+    Pos e = {(int)floorf(px), (int)floorf(pz)};
     if (dst)
     {
-        dst->x = (int) floor(px);
-        dst->z = (int) floor(pz);
+        *dst = e;
     }
+    Pos c = { e.x >> 4, e.z >> 4 };
     return c;
 }
 
-Pos3 getLinkedGatewayPos(const EndNoise *en, const SurfaceNoise *sn, uint64_t seed, Pos src)
+// std::hash<BlockPos>: FNV-1a of each coordinate, joined with boost::hash_combine
+static uint32_t hashBlockPos(int x, int y, int z)
 {
-    float y[33*33]; // buffer for [16][16] and [33][33]
-    int ymin = 0;
-    int i, j;
-
-    Pos dst;
-    Pos c = getLinkedGatewayChunk(en, sn, seed, src, &dst);
-
-    //if (en->mc > MC_1_16)
-    //{
-    //    // The original java implementation has a bug where the result
-    //    // variable for the in-chunk block search is assigned a reference
-    //    // to the mutable iterator, which ends up as the last iteration
-    //    // position and discards the found location.
-    //    dst.x = c.x * 16 + 15;
-    //    dst.z = c.z * 16 + 15;
-    //}
-    //else
+    int v[3] = {x, y, z};
+    uint64_t h = 0;
+    for (int i = 0; i < 3; i++)
     {
-        mapEndSurfaceHeight(y, en, sn, c.x*16, c.z*16, 16, 16, 1, 30);
-        mapEndIslandHeight(y, en, seed, c.x*16, c.z*16, 16, 16, 1);
-
-        uint64_t d = 0;
-        for (j = 0; j < 16; j++)
+        uint64_t f = 0xcbf29ce484222325ULL;
+        for (int b = 0; b < 4; b++)
         {
-            for (i = 0; i < 16; i++)
+            f ^= ((uint32_t) v[i] >> (8 * b)) & 0xff;
+            f *= 0x100000001b3ULL;
+        }
+        h ^= f + 0x9e3779b9ULL + (h << 6) + (h >> 2);
+    }
+    return (uint32_t) h;
+}
+
+// top block y of the End terrain and islands in an area (0: none),
+// terrain lower than ymin may be reported as 0
+static void endTopHeights(float *y, const EndNoise *en, const SurfaceNoise *sn, uint64_t seed,
+    int x, int z, int w, int h, int ymin)
+{
+    memset(y, 0, sizeof(float) * w * h);
+    mapEndSurfaceHeight(y, en, sn, x, z, w, h, 1, ymin);
+    mapEndIslandHeight(y, en, seed, x, z, w, h, 1);
+}
+
+// Before 1.11 (seen in 1.6) the exit is made in TheEndGenerator::postProcess of the exit chunk:
+// EndGatewayBlockActor::findValidSpawnInChunk takes the end stone (y 30..127) of that chunk with
+// two free blocks above that is closest to (0, 0, 0), else an island is made at (exit.x, 75, exit.z)
+// with a Random seeded by x * 8976890 + z + 73584825, and the gateway is 10 above the tallest block.
+static Pos3 getLinkedGatewayPosOld(const EndNoise *en, const SurfaceNoise *sn, uint64_t seed, Pos dst)
+{
+    float t[16*16];
+    float s[16*16];
+    float y[33*33];
+    int low[16*16] = {0};
+
+    int x0 = (dst.x >> 4) * 16;
+    int z0 = (dst.z >> 4) * 16;
+    int i, j;
+    int found = 0;
+    int r = 0;
+
+    float best = 0;
+    Pos3 sp = {dst.x, 75, dst.z};
+
+    memset(t, 0, sizeof(t));
+    mapEndSurfaceHeight(t, en, sn, x0, z0, 16, 16, 1, 0);
+    memcpy(s, t, sizeof(t));
+    mapEndIslandHeight(s, en, seed, x0, z0, 16, 16, 1);
+    float c[16*16];
+    memcpy(c, s, sizeof(c));
+    mapEndChorusHeight(c, en, sn, seed, x0, z0, 16, 16, low);
+    for (j = 0; j < 16; j++)
+    {
+        for (i = 0; i < 16; i++)
+        {
+            int k = j*16 + i, tops[2] = { (int) s[k], (int) t[k] }, n;
+            for (n = 0; n < 2; n++)
             {
-                int v = (int) y[j*16 + i];
-                if (v < 30) continue;
-                uint64_t dx = 16*c.x + i;
-                uint64_t dz = 16*c.z + j;
-                uint64_t dr = dx*dx + dz*dz + v*v;
-                if (dr > d)
+                int v = tops[n];
+                if (v < 30 || v > 127 || (n == 1 && v == tops[0]))
+                    continue;
+                if (low[k] && low[k] > v && low[k] <= v + 2)
+                    continue; // a chorus plant on it
+                if (n == 1 && tops[0] <= v + 2)
+                    continue; // an island right above the terrain
+                float dx = (float)(x0 + i) + 0.5f, dy = (float) v + 0.5f, dz = (float)(z0 + j) + 0.5f;
+                float d = dx*dx + dy*dy;
+                d += dz*dz;
+                if (!found || d < best)
                 {
-                    d = dr;
-                    dst.x = dx;
-                    dst.z = dz;
+                    found = 1;
+                    best = d;
+                    sp.x = x0 + i; sp.y = v; sp.z = z0 + j;
                 }
             }
         }
-        // use the previous result to retrieve the minimum y-level we know,
-        // we can skip generation of surfaces that are lower than this
-        for (i = 0; i < 16*16; i++)
-            if (y[i] > ymin)
-                ymin = (int) floor(y[i]);
+    }
+    if (!found)
+    {
+        setSeed((uint32_t)(dst.x * 8976890 + dst.z + 73584825));
+        r = nextInt(3) + 4;
     }
 
-    Pos sp = { dst.x-16, dst.z-16 };
-    // checking end islands is much cheaper than surface height generation, so
-    // we can also skip surface generation lower than the highest island around
-    memset(y, 0, sizeof(float)*33*33);
-    mapEndIslandHeight(y, en, seed, sp.x, sp.z, 33, 33, 1);
-    for (i = 0; i < 33*33; i++)
-        if (y[i] > ymin)
-            ymin = (int) floor(y[i]);
-
-    mapEndSurfaceHeight(y, en, sn, sp.x, sp.z, 33, 33, 1, ymin);
-    mapEndIslandHeight(y, en, seed, sp.x, sp.z, 33, 33, 1);
-
-    float v = -1;
+    endTopHeights(y, en, sn, seed, sp.x - 16, sp.z - 16, 33, 33, 0);
+    mapEndChorusHeight(y, en, sn, seed, sp.x - 16, sp.z - 16, 33, 33, NULL);
+    if (!found)
+    {   // the top layer of the island: x*x + z*z <= (r+1)^2
+        for (i = -r; i <= r; i++)
+        {
+            for (j = -r; j <= r; j++)
+            {
+                if (i*i + j*j <= (r+1)*(r+1) && y[(j+16)*33 + i+16] < 75)
+                {
+                    y[(j+16)*33 + i+16] = 75;
+                }
+            }    
+        }
+    }
+    Pos3 result = sp;
+    int v = -1;
     for (i = 0; i < 33; i++)
     {
         for (j = 0; j < 33; j++)
         {
-            if (y[j*33 + i] <= v)
+            if ((int) y[j*33 + i] <= v)
                 continue;
-            v = y[j*33 + i];
-            dst.x = sp.x + i;
-            dst.z = sp.z + j;
+            v = (int) y[j*33 + i];
+            result.x = sp.x + i - 16;
+            result.z = sp.z + j - 16;
         }
     }
+    if (v > 0)
+        result.y = v;
+    result.y += 10;
+    return result;
+}
 
-    Pos3 result = { dst.x, (int)v + 1, dst.z };
+Pos3 getLinkedGatewayPos(const EndNoise *en, const SurfaceNoise *sn, uint64_t seed, Pos src)
+{
+    float y[33*33];
+    int i, j;
+    Pos dst;
+    getLinkedGatewayChunk(en, sn, seed, src, &dst);
+    if (en->mc < MC_1_11)
+        return getLinkedGatewayPosOld(en, sn, seed, dst);
+
+    // findValidSpawnAround(exit, end stone only, radius 1) the top block (below y 127)
+    // of the columns within 16 of the exit that is closest to (e.x, 0, e.z)
+    endTopHeights(y, en, sn, seed, dst.x - 16, dst.z - 16, 33, 33, 0);
+    int found = 0;
+    float best = 0;
+    Pos s = dst;
+    int sy = 75;
+    for (i = 0; i < 33; i++)
+    {
+        for (j = 0; j < 33; j++)
+        {
+            int v = (int) y[j*33 + i];
+            if (v <= 0 || v > 127) continue;
+            float ddx = (float)(i - 16);
+            float ddz = (float)(j - 16);
+            float d = ddx*ddx + ddz*ddz + (float)v*v;
+            if (!found || d < best)
+            {
+                found = 1;
+                best = d;
+                s.x = dst.x + i - 16;
+                s.z = dst.z + j - 16;
+                sy = v;
+            }
+        }
+    }
+    // no end stone: an end island is made at (dst.x, 75, dst.z)
+    Pos3 result = {s.x, sy, s.z};
+    if (found)
+    {
+        // findTallestBlock(spawn, radius 16, with the centre): the highest solid block (chorus
+        // plants included), which is at least as high as the known columns shared with the area above
+        int ymin = 0;
+        for (i = 0; i < 33; i++)
+        {
+            for (j = 0; j < 33; j++)
+            {
+                if (abs(dst.x + i - 16 - s.x) <= 16 && abs(dst.z + j - 16 - s.z) <= 16 &&
+                    (int) y[j*33 + i] > ymin)
+                    ymin = (int) y[j*33 + i];
+            }
+        }
+        endTopHeights(y, en, sn, seed, s.x - 16, s.z - 16, 33, 33, ymin);
+        mapEndChorusHeight(y, en, sn, seed, s.x - 16, s.z - 16, 33, 33, NULL);
+        int v = -1;
+        for (i = 0; i < 33; i++)
+        {
+            for (j = 0; j < 33; j++)
+            {
+                if ((int) y[j*33 + i] <= v)
+                    continue;
+                v = (int) y[j*33 + i];
+                result.x = s.x + i - 16;
+                result.z = s.z + j - 16;
+            }
+        }
+        result.y = v;
+    }
+    else
+    {   // the island is an EndIslandFeature with a Random seeded by the hash of its position,
+        // its top layer is a disc of x*x + z*z <= (r+1)^2 for r = 4..6, so the tallest block
+        // first found (x outer, z inner) is at (-r, -3)
+        setSeed(hashBlockPos(dst.x, 75, dst.z));
+        int r = nextInt(3) + 4;
+        result.x = dst.x - r;
+        result.z = dst.z - 3;
+    }
+    // the outer gateway block is placed 10 above the tallest block
+    result.y += 10;
     return result;
 }
 
@@ -7116,7 +7517,7 @@ int canBiomeGenerate(int layerId, int mc, uint32_t flags, int id)
 {
     int dofilter = 0;
 
-    if (mc >= MC_1_13)
+    if (mc >= MC_1_4)
     {
         if (layerId == L_OCEAN_TEMP_256)
             return isShallowOcean(id);
@@ -7245,7 +7646,7 @@ void getAvailableBiomes(uint64_t *mL, uint64_t *mM, int layerId, int mc, uint32_
                 *mM |= (1ULL << i);
         }
     }
-    else if (mc >= MC_1_13 && layerId == L_OCEAN_TEMP_256)
+    else if (mc >= MC_1_4 && layerId == L_OCEAN_TEMP_256)
     {
         *mL =
             (1ULL << ocean) |
@@ -7515,7 +7916,7 @@ static void _genPotential(struct _gp_args *a, int layer, int id)
         break;
 
     case L_RIVER_MIX_4: // biomes added in (L_RIVER_MIX_4, L_VORONOI_1]
-        if (mc >= MC_1_13 && isOceanic(id)) {
+        if (mc >= MC_1_4 && isOceanic(id)) {
             if (id == ocean) {
                 _genPotential(a, L_VORONOI_1, ocean);
                 _genPotential(a, L_VORONOI_1, warm_ocean);
@@ -7988,7 +8389,7 @@ static const int g_biome_para_range_264_diff[][13] = {
 {-1,0,0,0,0,0,0,0,0,0,0,0,0}};
 
 static const int g_biome_para_range_266_diff[][13] = {
-{ice_caves              ,   IMIN,-8000,  IMIN, 5000,  IMIN,-1900,  IMIN, IMAX,  2000, 9000,  5000, IMAX},
+{ice_caves              ,   IMIN,-8000,  IMIN, 7000,  IMIN,-1900,  IMIN, IMAX,  2000, 9000,  5000, IMAX},
 {-1,0,0,0,0,0,0,0,0,0,0,0,0}};
 
 /**

@@ -9,68 +9,38 @@
 */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include "mt.h"
 
-#define SIZE 624
 #define PERIOD 397
-#define DIFF (SIZE - PERIOD)
 
-static const uint32_t MAGIC = 0x9908b0df;
+#if defined(_WIN32) && defined(__GNUC__) && defined(__x86_64__)
+#include <windows.h>
 
-struct MTState_
+uint32_t mt_tls_slot;
+static _Thread_local MTState mt_tls;
+
+__attribute__((constructor(101)))
+static void mt_tls_alloc(void)
 {
-  uint32_t MT[SIZE];
-  size_t index;
-  size_t index_fast; /* lazy init progress */
-};
-
-typedef struct MTState_ MTState;
-
-#ifdef _MSC_VER
-__declspec(thread) static MTState state;
-__declspec(thread) uint64_t mt_ws = (uint64_t)-1;
-__declspec(thread) int mt_a;
-__declspec(thread) int mt_b;
-#else
-static __thread MTState state;
-__thread uint64_t mt_ws = (uint64_t)-1;
-__thread int mt_a;
-__thread int mt_b;
-#endif
-
-#define M32(x) ((x) & 0x80000000)
-#define L31(x) ((x) & 0x7FFFFFFF)
-#define MIXBITS(u,v) (M32(u) | L31(v))
-#define TWIST(u,v) ((MIXBITS(u,v) >> 1) ^ ((v & 1) ? MAGIC : 0))
-
-static inline uint32_t generate()
-{
-  size_t idx = state.index;
-  if (idx == SIZE) idx = 0;
-
-  if (idx >= DIFF)
-  {
-    if (idx >= SIZE - 1)
-      state.MT[SIZE-1] = state.MT[PERIOD-1] ^ TWIST(state.MT[SIZE-1], state.MT[0]);
-    else
-      state.MT[idx] = state.MT[idx - DIFF] ^ TWIST(state.MT[idx], state.MT[idx+1]);
+  DWORD slot = TlsAlloc();
+  if (slot >= 64) {
+      fprintf(stderr, "MT ERR: no TEB TLS slot left\n");
+      abort();
   }
-  else 
-  {
-    state.MT[idx] = state.MT[idx + PERIOD] ^ TWIST(state.MT[idx], state.MT[idx+1]);
-    /* advance lazy init one slot */
-    if (state.index_fast < SIZE)
-    {
-      state.MT[state.index_fast] = 0x6c078965
-        * (state.MT[state.index_fast-1] ^ (state.MT[state.index_fast-1] >> 30))
-        + state.index_fast;
-      state.index_fast++;
-    }
-  }
-
-  state.index = idx + 1;
-  return state.MT[idx];
+  mt_tls_slot = slot;
 }
+
+MTState *mt_state_init(void)
+{
+  TlsSetValue(mt_tls_slot, &mt_tls);
+  return &mt_tls;
+}
+#elif defined(_MSC_VER)
+__declspec(thread) MTState mt_tls;
+#else
+_Thread_local MTState mt_tls;
+#endif
 
 static inline uint32_t temper(uint32_t y)
 {
@@ -81,50 +51,89 @@ static inline uint32_t temper(uint32_t y)
   return y;
 }
 
-void mt_seed(uint32_t value)
+static inline uint32_t twist(uint32_t a, uint32_t b, uint32_t m)
 {
-  state.MT[0] = value;
-  
-  for (uint_fast32_t i = 1; i <= PERIOD; ++i)
-    state.MT[i] = 0x6c078965 * (state.MT[i - 1] ^ (state.MT[i - 1] >> 30)) + i;
-  
-  state.index_fast = PERIOD + 1;
-  state.index = SIZE;
+  uint32_t y = (a & 0x80000000) | (b & 0x7fffffff);
+  return m ^ (y >> 1) ^ (-(y & 1) & 0x9908b0df);
 }
 
-uint32_t mt_next()
+static void twistRun(uint32_t *restrict mt, int k, int n, uint32_t *restrict out)
 {
-  if (state.index > SIZE) {
-    /* called without mt_seed(): full init with default seed */
-    for (uint_fast32_t i = 1; i < SIZE; ++i)
-      state.MT[i] = 0x6c078965 * (state.MT[i - 1] ^ (state.MT[i - 1] >> 30)) + i;
-    state.index_fast = SIZE;
-    state.index = SIZE;
+  if (k == MT_N - 1) {
+      mt[k] = twist(mt[k], mt[0], mt[PERIOD - 1]);
+      out[0] = temper(mt[k]);
+      return;
   }
   
-  return temper(generate());
+  const int off = (k < MT_N - PERIOD) ? PERIOD : PERIOD - MT_N;
+  for (int i = 0; i < n; i++) {
+      mt[k + i] = twist(mt[k + i], mt[k + i + 1], mt[k + i + off]);
+      out[i] = temper(mt[k + i]);
+  }
 }
 
-void mt_get_state(MTRngState *out)
+static void generate(MTState *s, uint64_t target)
 {
-  size_t i;
-  for (i = 0; i < SIZE; i++)
-    out->MT[i] = state.MT[i];
-  out->index = state.index;
-  out->index_fast = state.index_fast;
-  out->ws = mt_ws;
-  out->a = mt_a;
-  out->b = mt_b;
+  uint32_t *mt = s->mt;
+  
+  if (s->init < MT_N) {
+      int n = s->k + (int)(target - s->gen) + PERIOD;
+      if (n > MT_N)
+          n = MT_N;
+      for (int i = s->init; i < n; i++)
+          mt[i] = 0x6c078965 * (mt[i-1] ^ (mt[i-1] >> 30)) + i;
+      s->init = n;
+  }
+  
+  while (s->gen < target) {
+      int k = s->k;
+      int end = (k < MT_N - PERIOD) ? MT_N - PERIOD :
+                (k < MT_N - 1)      ? MT_N - 1 : MT_N;
+      uint64_t n = target - s->gen;
+      if (n > (uint64_t)(end - k))
+          n = end - k;
+  
+      uint32_t tmp[16], *out = tmp;
+      if (s->gen < MT_BUF) {
+          out = s->out + s->gen;
+          if (n > MT_BUF - s->gen)
+              n = MT_BUF - s->gen;
+      } else if (n > 16) {
+          n = 16;
+      }
+  
+      twistRun(mt, k, (int)n, out);
+      s->last = out[n-1];
+      s->gen += n;
+      s->k = (k + n < MT_N) ? k + n : 0;
+  }
 }
 
-void mt_set_state(const MTRngState *in)
+void mt_seed(uint32_t value)
 {
-  size_t i;
-  for (i = 0; i < SIZE; i++)
-    state.MT[i] = in->MT[i];
-  state.index = in->index;
-  state.index_fast = in->index_fast;
-  mt_ws = in->ws;
-  mt_a = in->a;
-  mt_b = in->b;
+  MTState *s = mt_state();
+  s->mt[0] = value;
+  s->init = 1;
+  s->k = 0;
+  s->seed = value;
+  s->gen = 0;
+  s->pos = 0;
+}
+
+uint32_t mt_next_slow(MTState *s)
+{
+  uint64_t pos = s->pos;
+  
+  if (!s->init)
+      mt_seed(5489);
+  
+  /* rewound past the buffer: replay from seed */
+  if (pos >= MT_BUF && pos + 1 < s->gen)
+      mt_seed(s->seed);
+  
+  s->pos = pos;
+  generate(s, pos < MT_BUF ? (pos | 15) + 1 : pos + 1);
+  s->pos = pos + 1;
+  
+  return (pos < MT_BUF) ? s->out[pos] : s->last;
 }

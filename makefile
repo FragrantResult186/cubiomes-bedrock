@@ -30,10 +30,15 @@ release: CFLAGS += -fPIC
 endif
 
 
-libcubiomes: noise.o biomes.o layers.o biomenoise.o cave.o generator.o finders.o util.o quadbase.o mt.o
+libcubiomes: noise.o biomes.o layers.o biomenoise.o cave.o generator.o finders.o jigsaw.o util.o quadbase.o mt.o
 	$(AR) $(ARFLAGS) libcubiomes.a $^
 
-finders.o: finders.c finders.h
+noise.o biomes.o layers.o biomenoise.o cave.o generator.o finders.o jigsaw.o util.o quadbase.o mt.o: mt.h
+
+finders.o: finders.c finders.h jigsaw.h tables/structure/village.h tables/structure/ancient_city.h
+	$(CC) -c $(CFLAGS) $<
+
+jigsaw.o: jigsaw.c jigsaw.h
 	$(CC) -c $(CFLAGS) $<
 
 generator.o: generator.c generator.h

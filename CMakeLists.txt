@@ -13,6 +13,7 @@ set(CMAKE_C_FLAGS_DEBUG "-O0 -g3 -DDEBUG")
 
 set(HEADERS
 	finders.h
+	jigsaw.h
 	generator.h
 	layers.h
 	biomenoise.h
@@ -25,6 +26,7 @@ set(HEADERS
 )
 set(SOURCES
 	finders.c
+	jigsaw.c
 	generator.c
 	layers.c
 	biomenoise.c

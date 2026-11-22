@@ -305,6 +305,46 @@ int getBiomeDepthAndScale(int id, double *depth, double *scale, int *grass);
 // Gets the range in the parent/source layer which may be accessed by voronoi.
 Range getVoronoiSrcRange(Range r);
 
+//=============================================================================
+// Nether (1.0+) terrain
+//=============================================================================
+
+STRUCT(NetherColumn)
+{
+    int gx, gz;
+    double d[17];
+};
+
+STRUCT(NetherTerrain)
+{
+    uint64_t seed;
+    SurfaceNoise sn;
+    PerlinNoise cap[4];     // soul sand valley
+    double col[17];         // vertical density offset of a column
+    NetherColumn cols[256]; // column cache
+};
+
+enum
+{
+    NB_AIR,
+    NB_NETHERRACK,
+    NB_LAVA,
+    NB_BEDROCK,
+    NB_SOUL_SAND,
+    NB_SOUL_SOIL,
+};
+
+NetherTerrain *netherTerrain(uint64_t seed);
+
+void initNetherTerrain(NetherTerrain *nt, uint64_t seed);
+
+double sampleNetherDensity(NetherTerrain *nt, int x, int y, int z);
+
+int isNetherSolid(NetherTerrain *nt, int x, int y, int z);
+
+int getNetherCapMaterial(const NetherTerrain *nt, int x, int z, int ceiling);
+
+int getNetherBlock(NetherTerrain *nt, int x, int y, int z, int soulValley);
 
 #ifdef __cplusplus
 }

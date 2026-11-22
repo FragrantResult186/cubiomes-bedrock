@@ -144,7 +144,7 @@ int biomeExists(int mc, int id)
     if (id >= jungle            && id <= jungle_hills)      return mc >= MC_1_2;
     if (id >= jungle_edge       && id <= badlands_plateau)  return mc >= MC_1_0;
     if (id >= small_end_islands && id <= end_barrens)       return mc >= MC_1_0;
-    if (id >= warm_ocean        && id <= deep_frozen_ocean) return mc >= MC_1_13;
+    if (id >= warm_ocean        && id <= deep_frozen_ocean) return mc >= MC_1_4;
 
     switch (id)
     {
@@ -202,7 +202,7 @@ int isOverworld(int mc, int id)
     case the_end:
         return 0;
     case frozen_ocean:
-        return mc < MC_1_0 || mc >= MC_1_13;
+        return mc < MC_1_0 || mc >= MC_1_4;
     case mountain_edge:
         return mc < MC_1_0;
     case deep_warm_ocean:

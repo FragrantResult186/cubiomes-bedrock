@@ -72,7 +72,7 @@ void setupGenerator(Generator *g, int mc, uint32_t flags)
     {
         setupLayerStack(&g->ls, mc, flags & LARGE_BIOMES);
         g->entry = NULL;
-        if (flags & FORCE_OCEAN_VARIANTS && mc >= MC_1_18)
+        if (flags & FORCE_OCEAN_VARIANTS && mc >= MC_1_4)
         {
             g->ls.entry_16 = setupLayer(
                 g->xlayer+2, &mapOceanMixMod, mc, 1, 0, 0,
@@ -516,7 +516,7 @@ void setupLayerStack(LayerStack *g, int mc, int largeBiomes)
     {
         // ocean variants
         p = setupLayer(l+L_OCEAN_TEMP_256, mapOceanTemp,   mc, 1, 0, 2,    0, 0);
-        p->noise = &g->oceanRnd;
+        // p->noise = &g->oceanRnd;
         p = setupLayer(l+L_OCEAN_EDGE_256, mapOceanEdge,   mc, 1, 2, 2, p, 0);
         p = setupLayer(l+L_ZOOM_128_OCEAN, mapZoom,        mc, 2, 3, 2002, p, 0);
         p = setupLayer(l+L_ZOOM_64_OCEAN,  mapZoom,        mc, 2, 3, 2002, p, 0);
